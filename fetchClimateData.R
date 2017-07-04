@@ -1,73 +1,87 @@
 rm(list=ls(all=TRUE)); graphics.off();
-# Uses FetchClimate package from CRAN
+setwd("C:/Users/Aldo/Dropbox/sAPROPOS project/DemogData")
 require(RFc)
 require(dplyr)
-
-
+require(magrittr)
 # Precipitation rate variable in FC is prate, units mm/month
 # Temperature variable is airt, units degrees C
-setwd("C:/Users/Aldo/Dropbox/sAPROPOS project/DemogData")
 
-# read data
-data <- read.csv("vitalRates.csv", head=T)
 
-# more than one location per species?
-# d <- read.csv("lambdas_6tr.csv", head=T)
-# grouped_data <- d %>% 
-#                   select(SpeciesAuthor, Lat, Lon) %>%
-#                   unique %>%
-#                   group_by(SpeciesAuthor) %>%
-#                   summarise(n = n() )
+# read data --------------------------------------------------------
+d           <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
 
+# exclude spp with no Lat/Lon info
+d           <- subset(d, !is.na(Lat) & !is.na(Lon) )
+
+# separate species: one spatial replicate/multiple spatial replicates
+spat_rep    <- d %>%
+                  select(SpeciesAuthor, Lat, Lon) %>%
+                  unique %>%
+                  group_by(SpeciesAuthor) %>%
+                  summarise(spatial_rep = n() )
+unrep_spp   <- subset(spat_rep, spatial_rep == 1)$SpeciesAuthor
+rep_spp     <- subset(spat_rep, spatial_rep != 1)$SpeciesAuthor
+
+
+# one spatial replicate only ---------------------------------------
+unrep_d       <- subset(d, SpeciesAuthor %in% unrep_spp)
 
 # Get per-study lat/lon and year range
-grouped_data <- data %>% 
+grouped_data  <- unrep_d %>% 
                   group_by(SpeciesAuthor) %>%
                   summarise(lat = first(Lat), 
                             lon = first(Lon),
-                            firstYear = min(MatrixStartYear), 
-                            lastYear = max(MatrixEndYear) )
+                            end_year = max(MatrixEndYear) )
 
 
-# Use daily time series to get each year precipitation data ----------------------
-ppt_daily_data <- data.frame(species = character(),
-                             year=integer(),
-                             day=integer(),
-                             ppt=double(),
-                             stringsAsFactors=FALSE)
+# (nested) functions to fecth climate --------------------------------------------
 
-for (i in seq_len(nrow(grouped_data))) {
-  sp <- grouped_data[i,]
-  for (yr in seq(from = sp$firstYear-2, to = sp$lastYear)) {
-    tmp <- fcTimeSeriesDaily(variable="prate",
-                             latitude = sp$lat, longitude = sp$lon,
-                             firstYear = yr, lastYear = yr)
-    tmp <- cbind(species = as.character(sp$SpeciesAuthor),
-                 year = yr, day = tmp$days, ppt = tmp$values[1,])
-    ppt_daily_data <- rbind(ppt_daily_data, tmp)
-  }
+# fetch daily climate
+fetch_daily_clim <- function(yr, var, sp){
+
+  tmp   <- fcTimeSeriesDaily(variable = var,
+                            latitude = sp$lat, longitude = sp$lon,
+                            firstYear = yr, lastYear = yr)
+  
+  # format data into a data frame
+  df_out <- data.frame(species = as.character(sp$SpeciesAuthor),
+                       year = as.integer(yr), 
+                       day = as.integer(tmp$days), 
+                       ppt = as.numeric(tmp$values[1,]),
+                       stringsAsFactors = F)
+  
+  return(df_out)
+  
 }
 
-write.csv(ppt_daily_data, "fcPpt.csv")
-
-
-# Use daily time series to get each year temp data -----------------------------
-temp_daily_data <- data.frame(species = character(),
-                              year=integer(),
-                              day=integer(),
-                              temp=double(),
-                              stringsAsFactors=FALSE)
-for (i in seq_len(nrow(grouped_data))) {
-  sp <- grouped_data[i,]
-
-  for (yr in seq(from = sp$firstYear-2, to = sp$lastYear)) {
-    tmp <- fcTimeSeriesDaily(variable="airt",
-                             latitude = sp$lat, longitude = sp$lon,
-                             firstYear = yr, lastYear = yr)
-    tmp <- cbind(species = as.character(sp$SpeciesAuthor),
-                 year = yr, day = tmp$days, temp = tmp$values[1,])
-    temp_daily_data <- rbind(temp_daily_data, tmp)
-  }
+# fetch climate across species
+climate_spp <- function(sp_i, var, grouped_datam, yr_back){
+  
+  sp      <- grouped_data[sp_i,]
+  yr_r    <- seq(sp$end_year-yr_back, sp$end_year, by = 1)
+  tmp     <- lapply(yr_r, fetch_daily_clim, var, sp)
+  sp_clim <- Reduce(function(...) rbind(...), tmp) %>%
+              as.data.frame(stringsAsFactors = F)
+  return(sp_clim)
+  
 }
 
-write.csv(temp_daily_data, paste0(wd, "/DemogData/fcTemp.csv"))
+
+# benchmarking
+spp_prate   <- lapply(1:nrow(grouped_data), climate_spp, "prate", grouped_data, 49)
+
+
+# download data ----------------------------------------------------------
+
+# precipitation data
+spp_prate <- lapply(1:nrow(grouped_data), climate_spp, "prate", grouped_data, 49)
+precip    <- Reduce(function(...) rbind(...), spp_prate)
+
+# temperature data
+spp_t     <- lapply(1:nrow(grouped_data), climate_spp, "airt", grouped_data)
+temp      <- Reduce(function(...) rbind(...), spp_t)
+
+
+# store -------------------------------------------------------------
+write.csv(precip, "precip_fc.csv", row.names = F)
+write.csv(temp,   "temp_fc.csv", row.names = F)
