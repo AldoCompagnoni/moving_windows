@@ -10,8 +10,9 @@ require(magrittr)
 # read data --------------------------------------------------------
 d           <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
 
-# exclude spp with no Lat/Lon info
-d           <- subset(d, !is.na(Lat) & !is.na(Lon) )
+# exclude spp with no Lat/Lon info, AND no start/end year
+d           <- subset(d, !is.na(Lat) & !is.na(Lon) & 
+                         !is.na(MatrixStartYear) & !is.na(MatrixEndYear))
 
 # separate species: one spatial replicate/multiple spatial replicates
 spat_rep    <- d %>%
@@ -31,8 +32,8 @@ grouped_data  <- unrep_d %>%
                   group_by(SpeciesAuthor) %>%
                   summarise(lat = first(Lat), 
                             lon = first(Lon),
-                            end_year = max(MatrixEndYear) )
-
+                            end_year = max(MatrixEndYear) ) 
+                  
 
 # (nested) functions to fecth climate --------------------------------------------
 
@@ -65,10 +66,6 @@ climate_spp <- function(sp_i, var, grouped_datam, yr_back){
   return(sp_clim)
   
 }
-
-
-# benchmarking
-spp_prate   <- lapply(1:nrow(grouped_data), climate_spp, "prate", grouped_data, 49)
 
 
 # download data ----------------------------------------------------------
