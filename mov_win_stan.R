@@ -1,6 +1,3 @@
-
-##### preliminaries ---------------------------------------------------
-
 # load libraries
 library(dplyr)
 library(tibble)
@@ -21,8 +18,8 @@ options(mc.cores = parallel::detectCores())
 setwd('~/desktop/stan_movwin/') # ***change to relevant path***
 
 # read Dalgleish et al. data
-d <- read.csv("data/lambdas.csv")
-precip <- read.csv("data/monthly_ppt_Dalgleish.csv")
+d <- read.csv("DemogData/lambdas.csv")
+precip <- read.csv("DemogData/climate_data/monthly_ppt_Dalgleish.csv")
 
 # analysis parameters  
 spp <- 1
@@ -36,50 +33,50 @@ dexppow <- function(x, mu, sigma, beta) {
 
 
 
-
-##### format species ---------------------------------------------------
+# format species -------------------------------------------------------------------------------
 
 # select species
 spp_dur <- d %>% 
-  group_by(SpeciesAccepted) %>% 
-  summarise(duration = length(unique(MatrixStartYear)))
+            group_by(SpeciesAccepted) %>% 
+            summarise(duration = length(unique(MatrixStartYear)))
 
 # species list
 spp_list <- d %>%
-  subset(Lat == 38.8 & Lon == -99.2) %>%
-  .[,"SpeciesAccepted"] %>%
-  as.character %>%
-  unique
+            subset(Lat == 38.8 & Lon == -99.2) %>%
+            .[,"SpeciesAccepted"] %>%
+            as.character %>%
+            unique
 
 # lambdas, all species
 xx_full <- d %>%
-  subset(SpeciesAccepted %in% spp_list) %>%
-  select(SpeciesAccepted, MatrixEndYear, lambda) %>%
-  setNames(c("species", "year","lambda")) %>%
-  mutate(log_lambda = log(lambda), species = as.character(species))
+            subset(SpeciesAccepted %in% spp_list) %>%
+            select(SpeciesAccepted, MatrixEndYear, lambda) %>%
+            setNames(c("species", "year","lambda")) %>%
+            mutate(log_lambda = log(lambda), species = as.character(species))
 
 # lambdas, focal species
-xx <- xx_full %>% subset(species == spp_list[spp])
+xx      <- xx_full %>% 
+            subset(species == spp_list[spp])
 
 
 
-
-##### format climate ---------------------------------------------------------
+# format climate -------------------------------------------------------------------------------------
 
 # detrend climate
-m_means <- colMeans(precip, na.rm=T)[-1]
-d_precip <- apply(precip[,-1], 2, FUN = scale, center = T, scale = T) 
-det_precip <- cbind(precip[,1], d_precip) %>% as.data.frame
-names(det_precip)[1] <- "YEAR"           
-
+m_means     <- colMeans(precip, na.rm=T)[-1]
+d_precip    <- apply(precip[,-1], 2, FUN = scale, center = T, scale = T) 
+det_precip  <- cbind(precip[,1], d_precip) %>%  
+                as.data.frame %>% 
+                rename(YEAR = V1)
+  
 # select precipitation range
 precip_long <- det_precip %>%
-  subset(YEAR < 1974 & YEAR > 1934) %>%
-  gather(month, precip, JAN:DEC) %>%
-  setNames(c("year", "month", "precip")) %>% 
-  mutate(month_num = factor(month, levels = toupper(month.abb))) %>% 
-  mutate(month_num = as.numeric(month_num)) %>% 
-  arrange(year, month_num)
+                subset(YEAR < 1974 & YEAR > 1934) %>%
+                gather(month, precip, JAN:DEC) %>%
+                setNames(c("year", "month", "precip")) %>% 
+                mutate(month_num = factor(month, levels = toupper(month.abb))) %>% 
+                mutate(month_num = as.numeric(month_num)) %>% 
+                arrange(year, month_num)
 
 # array for number of months before each sampling date
 precip_form <- function(x, dat, var) {
@@ -89,7 +86,7 @@ precip_form <- function(x, dat, var) {
 }
 
 # calculate monthly precipitation values
-years   <- xx$year %>% unique() %>% sort()
+years     <- xx$year %>% unique() %>% sort()
 precip_l  <- lapply(years, precip_form, precip_long, "precip")
 
 # put all in matrix form 
@@ -99,12 +96,11 @@ mat_form<- function(x, years) {
     setNames(years) 
 }
 
-x_precip  <- t(mat_form(precip_l, years))
-x_precip_means <- rowMeans(x_precip)      # climate averages over entire window (for control model #2)
+x_precip        <- t(mat_form(precip_l, years))
+x_precip_means  <- rowMeans(x_precip)      # climate averages over entire window (for control model #2)
 
 
-
-##### model ---------------------------------------------------------
+# model ------------------------------------------------------------------------------------------
 
 # organize data into list to pass to stan
 dat_stan <- list(
@@ -116,9 +112,10 @@ dat_stan <- list(
   expp_beta = expp_beta
 )
 
+
 # moving window, gaussian
 fit_gaus <- stan( 
-  file = 'stan/movwin_gaus.stan',
+  file = 'Code/climwin/stan_movwin/stan/movwin_gaus.stan',
   data = dat_stan,
   pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = 1000,
@@ -130,7 +127,7 @@ fit_gaus <- stan(
 
 # moving window, exponential power
 fit_expp <- stan( 
-  file = 'stan/movwin_expp.stan',
+  file = 'Code/climwin/stan_movwin/stan/movwin_expp.stan',
   data = dat_stan,
   pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = 1000,
@@ -142,7 +139,7 @@ fit_expp <- stan(
 
 # control 1 (intercept only)
 fit_ctrl1 <- stan(
-  file = 'stan/movwin_ctrl1.stan',
+  file = 'Code/climwin/stan_movwin/stan/movwin_ctrl1.stan',
   data = dat_stan,
   pars = c('alpha', 'y_sd', 'log_lik'),
   warmup = 1000,
@@ -153,7 +150,7 @@ fit_ctrl1 <- stan(
 
 # control 2 (full window average)
 fit_ctrl2 <- stan(
-  file = 'stan/movwin_ctrl2.stan',
+  file = 'Code/climwin/stan_movwin/stan/movwin_ctrl2.stan',
   data = dat_stan,
   pars = c('alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = 1000,
@@ -162,24 +159,15 @@ fit_ctrl2 <- stan(
   chains = 2
 )
 
-# evaluate model convergence and fit using library 'shinystan'
-# launch_shinystan(fit_guas)
-# launch_shinystan(fit_expp)
-# launch_shinystan(fit_ctrl1)
-# launch_shinystan(fit_ctrl2)
 
 # evaluate models with loo approximation (from library 'loo')
-ll_gaus <- extract_log_lik(fit_gaus)
-ll_expp <- extract_log_lik(fit_expp)
-ll_ctrl1 <- extract_log_lik(fit_ctrl1)
-ll_ctrl2 <- extract_log_lik(fit_ctrl2)
+mod_fit   <- list(fit_gaus, fit_expp, fit_ctrl1, fit_ctrl2)
+log_liks  <- lapply(mod_fit, extract_log_lik)
+loos      <- lapply(log_liks, loo) %>%
+              setNames(c("loo_gaus", "loo_expp", "loo_ctrl1",  "loo_ctrl2"))
+# shiny_eval <- lapply(fits, launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
 
-loo_gaus <- loo(ll_gaus)
-loo_expp <- loo(ll_expp)
-loo_ctrl1 <- loo(ll_ctrl1)
-loo_ctrl2 <- loo(ll_ctrl2)
-
-compare(loo_gaus, loo_expp, loo_ctrl1, loo_ctrl2)
+compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2)
 
 # extract posterior parameter estimates from fitted stan models
 sens_mu_gaus <- rstan::extract(fit_gaus, 'sens_mu')$sens_mu
