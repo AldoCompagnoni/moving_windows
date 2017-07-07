@@ -2,15 +2,16 @@
 setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
 library(dplyr)
 library(tidyr)
-library(chron)
+
 
 # read data -----------------------------------------------------
-lam   <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
-clim  <- read.csv("precip_fc.csv",  stringsAsFactors = F)
-spp   <- clim$species %>% unique
+lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
+clim    <- read.csv("precip_fc.csv",  stringsAsFactors = F)
+spp     <- clim$species %>% unique
+m_back  <- 24
+
 
 # format species ------------------------------------------------
-
 format_species <- function(spp_name, lam){
   
   lam   <- lam %>%
@@ -22,8 +23,10 @@ format_species <- function(spp_name, lam){
   
 }
 
+lam_spp <- format_species(spp_name, lam)
+
 # format climate ------------------------------------------------
-format_climate <- function(spp_name, clim){
+format_climate <- function(spp_name, clim, lam_spp){
   
   # select species-specific climate
   clim_spp <- clim %>% subset(species == spp_name)
@@ -54,6 +57,10 @@ format_climate <- function(spp_name, clim){
                 bind_cols(clim_m[,1]) %>%
                 select( c("year",month.abb) )
     
+  # long form (again!)
+  
+  
+  
 }
 
 
