@@ -1,4 +1,4 @@
-# species-specific lambda and climate data 
+# format spp lambda and climate data 
 setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
 library(dplyr)
 library(tidyr)
@@ -6,25 +6,34 @@ library(tidyr)
 
 # read data -----------------------------------------------------
 lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
-clim    <- read.csv("precip_fc.csv",  stringsAsFactors = F) #clim<-read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
+clim    <- read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
 spp     <- clim$species %>% unique
 m_back  <- 24
 
 
-# format species ------------------------------------------------
+# Formatting functions ------------------------------------------
+
+# format species 
 format_species <- function(spp_name, lam){
   
   lam   <- lam %>%
             subset(SpeciesAuthor == spp_name) %>%
-            dplyr::select(MatrixEndYear, MatrixPopulation, lambda) %>%
-            setNames(c("year","MatrixPopulation","lambda")) %>%
-            mutate(log_lambda = log(lambda))
-  return(lam)
+            dplyr::select(MatrixEndYear, MatrixStartMonth, MatrixPopulation, lambda) %>%
+            setNames(c("year","month","population","lambda")) %>%
+            mutate(log_lambda = log(lambda),
+                   population = as.factor(population) )
+  
+  # list of pop-specific lambdas
+  lam_l    <- lam %>%
+                select(-population) %>%
+                split( lam$population )
+  
+  return(lam_l)
   
 }
 
-# format climate 
-format_climate <- function(spp_name, clim, lam_spp){
+# separate climate variables by population 
+clim_list <- function(spp_name, clim, lam_spp){
   
   # select species-specific climate
   clim_spp  <- clim %>% 
@@ -40,8 +49,8 @@ format_climate <- function(spp_name, clim, lam_spp){
   
 }
 
-# format populations
-format_pop <- function(clim_x){
+# detrend population-level climate; put it in "long" form
+clim_detrend <- function(clim_x){ #, pops
 
   # format day one
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
@@ -61,22 +70,103 @@ format_pop <- function(clim_x){
                 group_by(year, month) %>%
                 summarise( ppt = sum(ppt, na.rm=T) )  %>%
                 spread(month, ppt) %>%
-                setNames( c("year",month.abb))
-                
+                setNames( c("year",month.abb)) %>%            
+                as.data.frame() #%>%
+                #add_column(population = pops, .after = 1)
+           
   # detrend climate
-  d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>% 
+  d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                 as.data.frame() %>%
-                bind_cols(clim_m[,1]) %>%
-                select( c("year",month.abb) )
+                bind_cols(clim_m[,"year",drop=F]) %>%
+                select( c("year", month.abb) )
 
   return(d_prec)
   
 }
 
+# climate in long form 
+clim_long <- function(clim_detr, lambda_data, m_back){
+  
+  # fecth year range, observation month
+  years     <- lambda_data$year %>% unique
+  yr_range  <- range(lambda_data$year)
+  m_obs     <- lambda_data$month %>% unique
+  
+  # detrended climate in "long" form
+  long_out  <- clim_detr %>%
+                  subset(year < (yr_range[2]+1) & year > (yr_range[1] - 4) ) %>%
+                  gather(month, precip, Jan:Dec) %>%
+                  setNames(c("year", "month", "clim_value")) %>% 
+                  mutate(month_num = factor(month, levels = month.abb) ) %>% 
+                  mutate(month_num = as.numeric(month_num)) %>% 
+                  arrange(year, month_num)
+  
+  # select temporal extent
+  clim_back <- function(yrz, m_obs, dat) {
+    id <- which(dat$year == yrz & dat$month_num == m_obs)
+    r  <- c( id:(id - (m_back-1)) )
+    return(dat[r,"clim_value"])
+  }
 
-# format by species ----------------------------------------------------------
-spp_name      <- spp[1] # test run w/ spp number 1
+  # climate data in matrix form 
+  mat_form<- function(dat, years){
+    do.call(rbind, dat) %>% 
+      as.data.frame %>%
+      add_column(year = years, .before=1)
+  }
+  
+  # calculate monthly precipitation values
+  precip_l  <- lapply(years, clim_back, m_obs, long_out)
+  x_precip  <- mat_form(precip_l, years)
+  return(x_precip)
+  
+}
 
+# combine climate data frames (if any)
+lambda_plus_clim <- function(lambdas_l, clim_mat_l){
+  
+  # lambda and climate n. of populations correspond?
+  if( length(lambdas_l) != length(clim_mat_l) ) stop("lambda and climate lists have differing lengths")
+  
+  # add population name to data frames
+  population_add <- function(x, pop_name){
+    add_column(x, population = pop_name)
+  }
+  lambdas_l   <- Map(population_add, lambdas_l, names(lambdas_l) )
+  clim_mat_l  <- Map(population_add, clim_mat_l, names(clim_mat_l) )
+  
+  # merge 
+  if( length(lambdas_l) > 1){ # if n. of populations exceeds 1
+    
+    lambdas   <- Reduce(function(...) rbind(...), lambdas_l)
+    climates  <- Reduce(function(...) rbind(...), clim_mat_l)
+    out       <- merge(lambdas, climates)
+    
+  } else {
+    
+    out       <- merge(lambdas_l[[1]], clim_mat_l[[1]]) 
+    
+  }
+    
+  out         <- arrange(out, year, population)
+  return(out)
+  
+}
+
+
+
+# test functions ----------------------------------------------------------------
+
+spp_name      <- spp[2] # test run w/ spp number 1
+
+# lambda data
 spp_lambdas   <- format_species(spp_name, lam)
-spp_raw_clim  <- format_climate(spp_name, clim, lam_spp)
-spp_clim      <- lapply(spp_raw_clim, format_pop)
+
+# climate data
+clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+clim_detrnded <- lapply(clim_separate, clim_detrend)
+clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
+
+# model data
+mod_data  <- lambda_plus_clim(spp_lambdas, clim_mats)
+
