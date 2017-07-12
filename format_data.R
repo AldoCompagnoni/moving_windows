@@ -1,30 +1,19 @@
-# format spp lambda and climate data 
-setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
-library(dplyr)
-library(tidyr)
-
-# read data -----------------------------------------------------
-lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) %>%
-            subset( !is.na(MatrixEndMonth) )
-clim    <- read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
-spp     <- clim$species %>% unique
-
-# Formatting functions ------------------------------------------
+# Formatting functions for climate and lambda data-------------------------------------
 
 # format species 
 format_species <- function(spp_name, lam){
   
-  lam   <- lam %>%
-            subset(SpeciesAuthor == spp_name) %>%
-            dplyr::select(MatrixEndYear, MatrixStartMonth, MatrixPopulation, lambda) %>%
-            setNames(c("year","month","population","lambda")) %>%
-            mutate(log_lambda = log(lambda),
-                   population = as.factor(population) )
+  lam_sel <- lam %>%
+                subset(SpeciesAuthor == spp_name) %>%
+                dplyr::select(MatrixEndYear, MatrixStartMonth, MatrixPopulation, lambda) %>%
+                setNames(c("year","month","population","lambda")) %>%
+                mutate(log_lambda = log(lambda),
+                       population = as.factor(population) )
   
   # list of pop-specific lambdas
-  lam_l    <- lam %>%
+  lam_l   <- lam_sel %>%
                 select(-population) %>%
-                split( lam$population )
+                split( lam_sel$population )
   
   return(lam_l)
   
@@ -138,34 +127,49 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
     
     lambdas   <- Reduce(function(...) rbind(...), lambdas_l)
     climates  <- Reduce(function(...) rbind(...), clim_mat_l)
-    out       <- merge(lambdas, climates)
+    clim_lam  <- merge(lambdas, climates)
     
   } else {
     
-    out       <- merge(lambdas_l[[1]], clim_mat_l[[1]]) 
+    clim_lam  <- merge(lambdas_l[[1]], clim_mat_l[[1]]) 
     
   }
     
-  out         <- arrange(out, year, population)
+  clim_lam    <- arrange(clim_lam, year, population)
+  lam_out     <- select(clim_lam, year:log_lambda)
+  clim_out    <- select(clim_lam, -c(year:log_lambda) )
+  out         <- list(lambdas = lam_out, climate = clim_out)
+  
   return(out)
   
 }
 
 
+# test functions ------------------------------------------------
+# 
+# setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
+# library(dplyr)
+# library(tidyr)
 
-# test functions ----------------------------------------------------------------
+# # read data -----------------------------------------------------
+# lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) %>%
+#             subset( !is.na(MatrixEndMonth) )
+# clim    <- read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
+# spp     <- clim$species %>% unique
 
-spp_name      <- spp[3] # test run w/ spp number 1
-m_back        <- 24     # months back
 
-# lambda data
-spp_lambdas   <- format_species(spp_name, lam)
+# read data -----------------------------------------------------
 
-# climate data
-clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-clim_detrnded <- lapply(clim_separate, clim_detrend)
-clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
-
-# model data
-mod_data  <- lambda_plus_clim(spp_lambdas, clim_mats)
-
+# spp_name      <- spp[3] # test run w/ spp number 1
+# m_back        <- 24     # months back
+# 
+# # lambda data
+# spp_lambdas   <- format_species(spp_name, lam)
+# 
+# # climate data
+# clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+# clim_detrnded <- lapply(clim_separate, clim_detrend)
+# clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
+# 
+# # model data
+# mod_data  <- lambda_plus_clim(spp_lambdas, clim_mats)
