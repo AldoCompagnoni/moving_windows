@@ -3,13 +3,11 @@ setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
 library(dplyr)
 library(tidyr)
 
-
 # read data -----------------------------------------------------
-lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
+lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) %>%
+            subset( !is.na(MatrixEndMonth) )
 clim    <- read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
 spp     <- clim$species %>% unique
-m_back  <- 24
-
 
 # Formatting functions ------------------------------------------
 
@@ -112,7 +110,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   mat_form<- function(dat, years){
     do.call(rbind, dat) %>% 
       as.data.frame %>%
-      add_column(year = years, .before=1)
+      tibble::add_column(year = years, .before=1)
   }
   
   # calculate monthly precipitation values
@@ -130,7 +128,7 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
   
   # add population name to data frames
   population_add <- function(x, pop_name){
-    add_column(x, population = pop_name)
+    tibble::add_column(x, population = pop_name)
   }
   lambdas_l   <- Map(population_add, lambdas_l, names(lambdas_l) )
   clim_mat_l  <- Map(population_add, clim_mat_l, names(clim_mat_l) )
@@ -157,7 +155,8 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
 
 # test functions ----------------------------------------------------------------
 
-spp_name      <- spp[2] # test run w/ spp number 1
+spp_name      <- spp[3] # test run w/ spp number 1
+m_back        <- 24     # months back
 
 # lambda data
 spp_lambdas   <- format_species(spp_name, lam)
