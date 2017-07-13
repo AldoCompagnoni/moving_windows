@@ -15,8 +15,8 @@ options(mc.cores = parallel::detectCores())
 # read data -----------------------------------------------------
 lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) %>%
               subset( !is.na(MatrixEndMonth) )
-clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) %>%
-              mutate( ppt = ppt / 30)
+clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
+              #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
 
@@ -67,7 +67,7 @@ fit_gaus <- stan(
   iter = sim_pars$iter,
   thin = sim_pars$thin,
   chains = sim_pars$chains,
-  control = list(adapt_delta = 0.995, stepsize = 0.005, max_treedepth = 12)
+  control = list(adapt_delta = 0.999, stepsize = 0.005, max_treedepth = 12)
 )
 
 # moving window, exponential power
@@ -79,7 +79,7 @@ fit_expp <- stan(
   iter = sim_pars$iter,
   thin = sim_pars$thin,
   chains = sim_pars$chains,
-  control = list(adapt_delta = 0.995, stepsize = 0.1, max_treedepth = 12)
+  control = list(adapt_delta = 0.999, stepsize = 0.005, max_treedepth = 12)
 )
 
 # control 1 (intercept only)
@@ -105,21 +105,47 @@ fit_ctrl2 <- stan(
 )
 
 
-# WAIC model comparison --------------------------------------------------------------------
+# store parameter values ----------------------------------------------------------------
 
 # list of model fits
-mod_fit   <- list(fit_gaus, fit_expp, fit_ctrl1, fit_ctrl2)
+mod_fit   <- list(gaus = fit_gaus, expp = fit_expp, 
+                  ctrl1 = fit_ctrl1, ctrl2 = fit_ctrl2)
 
-# Rhat convergence check  
-rhat_check <- function(input_mod){
+# parameter values
+pars      <- c('sens_mu', 'sens_sd', 'alpha', 'beta', "y_sd")
+
+# get central tendencies
+central_tend_get <- function(x){
   
-  rhats <- summary(input_mod)$summary[,"Rhat"]
-  if( any(rhats > 1.1) ){
-    TRUE
-  } else{ FALSE }
+  tmp         <- rstan::extract(x)
+  par_means   <- sapply(tmp, function(x) mean(x)) %>% 
+                    setNames( paste0(names(tmp),"_mean") ) 
+  par_medians <- sapply(tmp, function(x) median(x)) %>%
+                    setNames( paste0(names(tmp),"_median") )
+  out         <- c(par_means, par_medians) %>% t %>% as.data.frame
   
+  rm(tmp) ; return(out)
 }
-expect_false( any(sapply(mod_fit, rhat_check)) )
+
+# calculate and store central tendencies
+centr_tend_list     <- lapply(mod_fit, central_tend_get)
+central_tendencies  <- Reduce(function(...) bind_rows(...), centr_tend_list) %>%
+                          add_column(model = names(mod_fit), .before = 1)
+#write.csv(central_tendencies, paste0(spp_name,"_central_tendencies.csv"), row.names=F)
+
+  
+# WAIC model comparison --------------------------------------------------------------------
+
+# # Rhat convergence check  
+# rhat_check <- function(input_mod){
+#   
+#   rhats <- summary(input_mod)$summary[,"Rhat"]
+#   if( any(rhats > 1.1) ){
+#     TRUE
+#   } else{ FALSE }
+#   
+# }
+# expect_false( any(sapply(mod_fit, rhat_check)) )
 
 
 # wAIC model selection using loo approximation (from library 'loo')
@@ -129,6 +155,7 @@ loos      <- lapply(log_liks, loo) %>%
 # shiny_eval <- lapply(fits, launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
 waics     <- compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2)
 #write.csv(waics, paste0("waic_",spp_name,".csv"), row.names=F)
+
 
 
 
