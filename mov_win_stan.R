@@ -15,7 +15,8 @@ options(mc.cores = parallel::detectCores())
 # read data -----------------------------------------------------
 lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) %>%
               subset( !is.na(MatrixEndMonth) )
-clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F)
+clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) %>%
+              mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
 
@@ -78,7 +79,7 @@ fit_expp <- stan(
   iter = sim_pars$iter,
   thin = sim_pars$thin,
   chains = sim_pars$chains,
-  control = list(adapt_delta = 0.9, stepsize = 0.1, max_treedepth = 12)
+  control = list(adapt_delta = 0.995, stepsize = 0.1, max_treedepth = 12)
 )
 
 # control 1 (intercept only)
@@ -113,7 +114,7 @@ mod_fit   <- list(fit_gaus, fit_expp, fit_ctrl1, fit_ctrl2)
 rhat_check <- function(input_mod){
   
   rhats <- summary(input_mod)$summary[,"Rhat"]
-  if( any(rhats > 1.05) ){
+  if( any(rhats > 1.1) ){
     TRUE
   } else{ FALSE }
   
@@ -134,7 +135,7 @@ waics     <- compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl
 # leave-one-out crossvalidation ---------------------------------------------------
 
 # crossvalidation function
-CrossVal <- function(i) {       # i is index for row to leave out
+CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   
   # put all in matrix form 
   x_clim            <- mod_data$climate
@@ -186,7 +187,7 @@ CrossVal <- function(i) {       # i is index for row to leave out
     iter = sim_pars$iter,
     thin = sim_pars$thin,
     chains = sim_pars$chains,
-    control = list(adapt_delta = 0.9, stepsize = 0.1, max_treedepth = 12)
+    control = list(adapt_delta = 0.995, stepsize = 0.1, max_treedepth = 12)
   )
   
   # fit control 1 (intercept only)
@@ -221,34 +222,31 @@ CrossVal <- function(i) {       # i is index for row to leave out
   # predictions
   mod_preds <- lapply(crossval_mods, function(x) rstan::extract(x, 'pred_y')$pred_y %>% mean )
 
-  # pred_gaus <- mean(rstan::extract(fit_gaus_crossval, 'pred_y')$pred_y)
-  # pred_expp <- mean(rstan::extract(fit_expp_crossval, 'pred_y')$pred_y)
-  # pred_c1 <- mean(rstan::extract(fit_ctrl1_crossval, 'pred_y')$pred_y)
-  # pred_c2 <- mean(rstan::extract(fit_ctrl2_crossval, 'pred_y')$pred_y)
- 
-  # diagnostics for gaussian moving window
-  diverg_gaus <- do.call(rbind, args = get_sampler_params(fit_gaus_crossval, inc_warmup = F))[,5]
-  n_diverg_gaus <- length(which(diverg_gaus == 1))
-  df_summ_gaus <- as.data.frame(summary(fit_gaus_crossval)$summary)
-  rhat_high_gaus <- length(which(df_summ_gaus$Rhat > 1.1))
-  n_eff_gaus <- df_summ_gaus$n_eff / length(diverg_gaus)
-  n_eff_low_gaus <- length(which(n_eff_gaus < 0.1))
-  mcse_high_gaus <- length(which(df_summ_gaus$se_mean / df_summ_gaus$sd > 0.1))
+  # diagnostics 
+  diagnostics <- function(fit_obj, name_mod){
+    
+    diverg      <- do.call(rbind, args = get_sampler_params(fit_obj, inc_warmup = F))[,5]
+    n_diverg    <- length(which(diverg == 1))
+    df_summ     <- as.data.frame(summary(fit_obj)$summary)
+    rhat_high   <- length(which(df_summ$Rhat > 1.1))
+    n_eff       <- df_summ$n_eff / length(diverg)
+    n_eff_low   <- length(which(n_eff < 0.1))
+    mcse_high   <- length(which(df_summ$se_mean / df_summ$sd > 0.1))
+    out         <- data.frame(n_diverg, rhat_high, 
+                              n_eff_low, mcse_high) 
+    out         <- setNames(out, paste0(names(out),"_",name_mod) )
+    
+  }
   
-  # diagnostics for exponential-power moving window
-  diverg_expp <- do.call(rbind, args = get_sampler_params(fit_expp_crossval, inc_warmup = F))[,5]
-  n_diverg_expp <- length(which(diverg_expp == 1))
-  df_summ_expp <- as.data.frame(summary(fit_expp_crossval)$summary)
-  rhat_high_expp <- length(which(df_summ_expp$Rhat > 1.1))
-  n_eff_expp <- df_summ_expp$n_eff / length(diverg_expp)
-  n_eff_low_expp <- length(which(n_eff_expp < 0.1))
-  mcse_high_expp <- length(which(df_summ_expp$se_mean / df_summ_expp$sd > 0.1))
+  # store diagnostics
+  gaus_expp   <- crossval_mods[1:2]
+  diagnost_l  <- Map(diagnostics, gaus_expp, names(gaus_expp))
+  diagnost_df <- do.call(cbind, diagnost_l)        
   
   # df to return
-  out <- data.frame(mod_preds$gaus, mod_preds$expp, mod_preds$ctrl1, mod_preds$ctrl2,
-                    n_diverg_gaus, rhat_high_gaus, n_eff_low_gaus, mcse_high_gaus,
-                    n_diverg_expp, rhat_high_expp, n_eff_low_expp, mcse_high_expp)
-  
+  out <- data.frame(mod_preds$gaus, mod_preds$expp, mod_preds$ctrl1, mod_preds$ctrl2) %>%
+            bind_cols(diagnost_df)
+                    
   # remove stanfit objects (garbage collection)
   rm(fit_gaus_crossval)
   rm(fit_expp_crossval)
@@ -256,6 +254,17 @@ CrossVal <- function(i) {       # i is index for row to leave out
   rm(fit_ctrl2_crossval)
   
   return(out)
+  
 }
 
+# spp-specific cross validation
+cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data) %>%
+                rbindlist(idcol=T)
+cxval_pred  <- do.call(rbind, cxval_res) 
 
+# mean squared errors
+mses         <- cxval_pred %>% 
+                  select(mod_preds.gaus:mod_preds.ctrl2) %>%
+                  sweep(1, mod_data$lambdas$log_lambda, "-") %>%
+                  .^2 %>%
+                  colMeans
