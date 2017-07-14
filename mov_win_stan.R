@@ -32,7 +32,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 
 # format data ---------------------------------------------------------------------------------------
-spp_name      <- spp[4] # test run w/ spp number 1
+spp_name      <- spp[2] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
@@ -78,7 +78,7 @@ fit_gaus <- stan(
   iter = sim_pars$iter,
   thin = sim_pars$thin,
   chains = sim_pars$chains,
-  control = list(adapt_delta = 0.999, stepsize = 0.005, max_treedepth = 12)
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
 
 # moving window, exponential power
@@ -90,7 +90,7 @@ fit_expp <- stan(
   iter = sim_pars$iter,
   thin = sim_pars$thin,
   chains = sim_pars$chains,
-  control = list(adapt_delta = 0.999, stepsize = 0.005, max_treedepth = 12)
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
 
 # control 1 (intercept only)
@@ -116,7 +116,7 @@ fit_ctrl2 <- stan(
 )
 
 
-# store parameter values ----------------------------------------------------------------
+# parameter values and diagnostics ----------------------------------------------------------------
 
 # list of model fits
 mod_fit   <- list(gaus = fit_gaus, expp = fit_expp, 
@@ -126,47 +126,51 @@ mod_fit   <- list(gaus = fit_gaus, expp = fit_expp,
 pars      <- c('sens_mu', 'sens_sd', 'alpha', 'beta', "y_sd")
 
 # get central tendencies
-central_tend_get <- function(x){
+pars_diag_extract <- function(x){
   
+  # central tendencies
   tmp         <- rstan::extract(x)
   par_means   <- sapply(tmp, function(x) mean(x)) %>% 
                     setNames( paste0(names(tmp),"_mean") ) 
   par_medians <- sapply(tmp, function(x) median(x)) %>%
                     setNames( paste0(names(tmp),"_median") )
-  out         <- c(par_means, par_medians) %>% t %>% as.data.frame
+  central_tend<- c(par_means, par_medians)
+  
+  # diagnostics
+  diverg      <- do.call(rbind, args = get_sampler_params(x, inc_warmup = F))[,5]
+  n_diverg    <- length(which(diverg == 1))
+  df_summ     <- as.data.frame(summary(x)$summary)
+  rhat_high   <- length(which(df_summ$Rhat > 1.1))
+  n_eff       <- df_summ$n_eff / length(diverg)
+  n_eff_low   <- length(which(n_eff < 0.1))
+  mcse_high   <- length(which(df_summ$se_mean / df_summ$sd > 0.1))
+  diagnostics <- c(n_diverg = n_diverg, rhat_high = rhat_high, 
+                   n_eff_low = n_eff_low, mcse_high = mcse_high)
+  out         <- c( central_tend, diagnostics ) %>% t %>% as.data.frame
   
   rm(tmp) ; return(out)
+  
 }
 
 # calculate and store central tendencies
-centr_tend_list     <- lapply(mod_fit, central_tend_get)
-central_tendencies  <- Reduce(function(...) bind_rows(...), centr_tend_list) %>%
-                          tibble::add_column(model = names(mod_fit), .before = 1)
-#write.csv(central_tendencies, paste0(spp_name,"_central_tendencies.csv"), row.names=F)
+pars_diag_l   <- lapply(mod_fit, pars_diag_extract)
+mod_pars_diag <- Reduce(function(...) bind_rows(...), pars_diag_l) %>%
+                    tibble::add_column(model = names(mod_fit), .before = 1)
 
-  
 # WAIC model comparison --------------------------------------------------------------------
-
-# # Rhat convergence check  
-# rhat_check <- function(input_mod){
-#   
-#   rhats <- summary(input_mod)$summary[,"Rhat"]
-#   if( any(rhats > 1.1) ){
-#     TRUE
-#   } else{ FALSE }
-#   
-# }
-# expect_false( any(sapply(mod_fit, rhat_check)) )
-
 
 # wAIC model selection using loo approximation (from library 'loo')
 log_liks  <- lapply(mod_fit, extract_log_lik)
 loos      <- lapply(log_liks, loo) %>%
               setNames(c("loo_gaus", "loo_expp", "loo_ctrl1",  "loo_ctrl2"))
 # shiny_eval <- lapply(fits, launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
-waics     <- compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2)
-#write.csv(waics, paste0("waic_",spp_name,".csv"), row.names=F)
+waics     <- loo::compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2) %>%
+              as.data.frame %>%
+              tibble::add_column(model = gsub("loo_","",names(loos) ), .before = 1)
 
+# store results ---------------------------------------------------------------------------
+mod_summs <- merge(mod_pars_diag, waics)  
+# write.csv(mod_summs, paste0("mod_summaries_",spp_name,".csv"), row.names = F)
 
 
 
@@ -273,6 +277,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
     out         <- data.frame(n_diverg, rhat_high, 
                               n_eff_low, mcse_high) 
     out         <- setNames(out, paste0(names(out),"_",name_mod) )
+    return(out)
     
   }
   
@@ -296,8 +301,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
 }
 
 # spp-specific cross validation
-cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data) %>%
-                rbindlist(idcol=T)
+cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
 # mean squared errors
@@ -306,3 +310,4 @@ mses         <- cxval_pred %>%
                   sweep(1, mod_data$lambdas$log_lambda, "-") %>%
                   .^2 %>%
                   colMeans
+
