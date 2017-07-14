@@ -7,26 +7,37 @@ library(loo)
 library(rstan)
 library(testthat)
 
-
 # set rstan options
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-# read data -----------------------------------------------------
-lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) %>%
-              subset( !is.na(MatrixEndMonth) )
+
+# read data -----------------------------------------------------------------------------------------
+lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
+m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
 clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
               #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
+# add monthg info to lambda information
+month_add <- m_info %>%
+              mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
+              select(SpeciesAuthor, MatrixEndMonth)
+lam_add   <- subset(lam, SpeciesAuthor %in% m_info$SpeciesAuthor) %>%  
+              select(-MatrixEndMonth) %>%
+              inner_join(month_add)
+lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
+lambdas   <- bind_rows(lam_min, lam_add) %>%
+              subset( !is.na(MatrixEndMonth) )
 
-# format data ---------------------------------------------------
-spp_name      <- spp[1] # test run w/ spp number 1
+
+# format data ---------------------------------------------------------------------------------------
+spp_name      <- spp[4] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
 # lambda data
-spp_lambdas   <- format_species(spp_name, lam)
+spp_lambdas   <- format_species(spp_name, lambdas)
 
 # climate data
 clim_separate <- clim_list(spp_name, clim, spp_lambdas)
@@ -130,7 +141,7 @@ central_tend_get <- function(x){
 # calculate and store central tendencies
 centr_tend_list     <- lapply(mod_fit, central_tend_get)
 central_tendencies  <- Reduce(function(...) bind_rows(...), centr_tend_list) %>%
-                          add_column(model = names(mod_fit), .before = 1)
+                          tibble::add_column(model = names(mod_fit), .before = 1)
 #write.csv(central_tendencies, paste0(spp_name,"_central_tendencies.csv"), row.names=F)
 
   
