@@ -32,7 +32,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 
 # format data ---------------------------------------------------------------------------------------
-spp_name      <- spp[2] # test run w/ spp number 1
+spp_name      <- spp[7] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
@@ -163,15 +163,10 @@ mod_pars_diag <- Reduce(function(...) bind_rows(...), pars_diag_l) %>%
 log_liks  <- lapply(mod_fit, extract_log_lik)
 loos      <- lapply(log_liks, loo) %>%
               setNames(c("loo_gaus", "loo_expp", "loo_ctrl1",  "loo_ctrl2"))
-# shiny_eval <- lapply(fits, launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
+# shiny_eval<- lapply(mod_fit[[1]], launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
 waics     <- loo::compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2) %>%
               as.data.frame %>%
               tibble::add_column(model = gsub("loo_","",names(loos) ), .before = 1)
-
-# store results ---------------------------------------------------------------------------
-mod_summs <- merge(mod_pars_diag, waics)  
-# write.csv(mod_summs, paste0("mod_summaries_",spp_name,".csv"), row.names = F)
-
 
 
 # leave-one-out crossvalidation ---------------------------------------------------
@@ -217,7 +212,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
     iter = sim_pars$iter,
     thin = sim_pars$thin,
     chains = sim_pars$chains,
-    control = list(adapt_delta = 0.995, stepsize = 0.005, max_treedepth = 12)
+    control = list(adapt_delta = 0.999, stepsize = 0.005, max_treedepth = 12)
   )
   
   # fit moving window, exponential power
@@ -229,7 +224,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
     iter = sim_pars$iter,
     thin = sim_pars$thin,
     chains = sim_pars$chains,
-    control = list(adapt_delta = 0.995, stepsize = 0.1, max_treedepth = 12)
+    control = list(adapt_delta = 0.999, stepsize = 0.1, max_treedepth = 12)
   )
   
   # fit control 1 (intercept only)
@@ -305,9 +300,22 @@ cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
 # mean squared errors
-mses         <- cxval_pred %>% 
+mses        <- cxval_pred %>% 
                   select(mod_preds.gaus:mod_preds.ctrl2) %>%
                   sweep(1, mod_data$lambdas$log_lambda, "-") %>%
-                  .^2 %>%
-                  colMeans
+                  .^2 %>% 
+                  colMeans %>% 
+                  t %>% 
+                  t %>%
+                  as.data.frame %>%
+                  tibble::rownames_to_column(var = "model") %>%
+                  mutate( model = gsub("mod_preds.", "", model))  %>%
+                  setNames( c("model", "mse") )
 
+
+# store results ---------------------------------------------------------------------------
+mod_summs <- Reduce(function(...) merge(...), 
+                    list(mod_pars_diag, waics, mses) ) %>%
+                    arrange( mse )
+# write.csv(mod_summs, paste0("mod_summaries_",spp_name,".csv"), row.names = F)
+# write.csv(cxval_pred, paste0("crossval_pred_diag_",spp_name,".csv"), row.names = F)
