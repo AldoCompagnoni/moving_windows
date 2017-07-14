@@ -5,7 +5,7 @@ format_species <- function(spp_name, lam){
   
   lam_sel <- lam %>%
                 subset(SpeciesAuthor == spp_name) %>%
-                dplyr::select(MatrixEndYear, MatrixStartMonth, MatrixPopulation, lambda) %>%
+                dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
                 setNames(c("year","month","population","lambda")) %>%
                 mutate(log_lambda = log(lambda),
                        population = as.factor(population) )
