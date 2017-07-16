@@ -159,7 +159,7 @@ posterior_extract <- function(model_fit, model_name){
   tmp         <- rstan::extract(model_fit)
   post_df     <- do.call(cbind, tmp) %>% as.data.frame
   ll_id       <- grep("V", colnames(post_df) )
-  new_names   <- paste0("log_lik_", 1:length(log_lik_id) )
+  new_names   <- paste0("log_lik_", 1:length(ll_id) )
   names(post_df)[ll_id] <- new_names # no way to do this in dplyr
   post_df     <- tibble::add_column(post_df, 
                                     model = model_name, .before=1)
