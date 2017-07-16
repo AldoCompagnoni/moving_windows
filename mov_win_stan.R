@@ -32,7 +32,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 
 # format data ---------------------------------------------------------------------------------------
-spp_name      <- spp[7] # test run w/ spp number 1
+spp_name      <- spp[1] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
@@ -152,10 +152,31 @@ pars_diag_extract <- function(x){
   
 }
 
-# calculate and store central tendencies
+# store posteriors 
+posterior_extract <- function(model_fit, model_name){
+  
+  # central tendencies
+  tmp         <- rstan::extract(model_fit)
+  post_df     <- do.call(cbind, tmp) %>% as.data.frame
+  ll_id       <- grep("V", colnames(post_df) )
+  new_names   <- paste0("log_lik_", 1:length(log_lik_id) )
+  names(post_df)[ll_id] <- new_names # no way to do this in dplyr
+  post_df     <- tibble::add_column(post_df, 
+                                    model = model_name, .before=1)
+    
+  rm(tmp) ; return(post_df)
+
+}
+
+# calculate central tendencies
 pars_diag_l   <- lapply(mod_fit, pars_diag_extract)
 mod_pars_diag <- Reduce(function(...) bind_rows(...), pars_diag_l) %>%
                     tibble::add_column(model = names(mod_fit), .before = 1)
+
+# store posteriors 
+posts_l       <- Map(posterior_extract, mod_fit, names(mod_fit) )
+posteriors    <- Reduce(function(...) bind_rows(...), posts_l)
+
 
 # WAIC model comparison --------------------------------------------------------------------
 
@@ -317,5 +338,6 @@ mses        <- cxval_pred %>%
 mod_summs <- Reduce(function(...) merge(...), 
                     list(mod_pars_diag, waics, mses) ) %>%
                     arrange( mse )
-# write.csv(mod_summs, paste0("mod_summaries_",spp_name,".csv"), row.names = F)
-# write.csv(cxval_pred, paste0("crossval_pred_diag_",spp_name,".csv"), row.names = F)
+# write.csv(mod_summs, paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",spp_name,".csv"), row.names = F)
+# write.csv(posteriors, paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",spp_name,".csv"), row.names = F)
+# write.csv(cxval_pred, paste0("C:/cloud/MEGA/Projects/sApropos/results/crossval_pred_diag_",spp_name,".csv"), row.names = F)
