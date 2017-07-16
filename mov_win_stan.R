@@ -22,9 +22,9 @@ spp     <- clim$species %>% unique
 # add monthg info to lambda information
 month_add <- m_info %>%
               mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
-              select(SpeciesAuthor, MatrixEndMonth)
+              dplyr::select(SpeciesAuthor, MatrixEndMonth)
 lam_add   <- subset(lam, SpeciesAuthor %in% m_info$SpeciesAuthor) %>%  
-              select(-MatrixEndMonth) %>%
+              dplyr::select(-MatrixEndMonth) %>%
               inner_join(month_add)
 lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
 lambdas   <- bind_rows(lam_min, lam_add) %>%
@@ -32,7 +32,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 
 # format data ---------------------------------------------------------------------------------------
-spp_name      <- spp[1] # test run w/ spp number 1
+spp_name      <- spp[2] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
@@ -320,23 +320,58 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
 cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
-# mean squared errors
-mses        <- cxval_pred %>% 
-                  select(mod_preds.gaus:mod_preds.ctrl2) %>%
-                  sweep(1, mod_data$lambdas$log_lambda, "-") %>%
-                  .^2 %>% 
-                  colMeans %>% 
-                  t %>% 
-                  t %>%
-                  as.data.frame %>%
-                  tibble::rownames_to_column(var = "model") %>%
-                  mutate( model = gsub("mod_preds.", "", model))  %>%
-                  setNames( c("model", "mse") )
+
+# measures of fit -------------------------------------------------------------------------- 
+
+# calculate either mse or deviance
+pred_perform <- function(x, mod_data, type){
+  
+  if( type == "mse"){
+    res   <- (x - mod_data$lambdas$log_lambda)^2 %>% mean
+  }
+  if(type == "deviance"){
+    res   <-calc.deviance(x, mod_data$lambdas$log_lambda, 
+                          weights = rep(1, length(x) ),  
+                          family="gaussian", calc.mean = TRUE)
+  }
+ 
+  return(res)
+  
+}
+
+# format results into a data frame
+perform_format <- function(x, var){
+  
+  x %>%
+    unlist %>%
+    t %>% 
+    t %>%
+    as.data.frame %>%
+    tibble::rownames_to_column(var = "model") %>%
+    mutate( model = gsub("mod_preds.", "", model))  %>%
+    setNames( c("model", var) )
+  
+}
+
+# mean squared error
+mse <- cxval_pred %>% 
+          dplyr::select(mod_preds.gaus:mod_preds.ctrl2) %>%
+          lapply(pred_perform, mod_data, "mse") %>%
+          perform_format("mse")
+
+# deviance 
+devi <- cxval_pred %>% 
+          dplyr::select(mod_preds.gaus:mod_preds.ctrl2) %>%
+          lapply(pred_perform, mod_data, "deviance") %>%
+          perform_format("deviance")
+
+# measures of fit
+mof  <- merge(mse, devi)
 
 
 # store results ---------------------------------------------------------------------------
 mod_summs <- Reduce(function(...) merge(...), 
-                    list(mod_pars_diag, waics, mses) ) %>%
+                    list(mod_pars_diag, waics, mof) ) %>%
                     arrange( mse )
 # write.csv(mod_summs, paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",spp_name,".csv"), row.names = F)
 # write.csv(posteriors, paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",spp_name,".csv"), row.names = F)
