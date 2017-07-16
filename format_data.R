@@ -12,7 +12,7 @@ format_species <- function(spp_name, lam){
   
   # list of pop-specific lambdas
   lam_l   <- lam_sel %>%
-                select(-population) %>%
+                dplyr::select(-population) %>%
                 split( lam_sel$population )
   
   return(lam_l)
@@ -29,7 +29,7 @@ clim_list <- function(spp_name, clim, lam_spp){
     
   # list of climate
   clim_l    <- clim_spp %>%
-                  select(-population) %>%
+                  dplyr::select(-population) %>%
                   split( clim_spp$population )
 
   return(clim_l)
@@ -49,7 +49,7 @@ clim_detrend <- function(clim_x){ #, pops
                 as.data.frame(stringsAsFactors=F) %>%
                 separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
                 bind_cols(clim_x) %>%
-                select(-year,-day) %>%
+                dplyr::select(-year,-day) %>%
                 setNames( c("year", "month", "day", "species", "ppt") )
   
   # monthly climates
@@ -65,7 +65,7 @@ clim_detrend <- function(clim_x){ #, pops
   d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                 as.data.frame() %>%
                 bind_cols(clim_m[,"year",drop=F]) %>%
-                select( c("year", month.abb) )
+                dplyr::select( c("year", month.abb) )
 
   return(d_prec)
   
@@ -136,8 +136,8 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
   }
     
   clim_lam    <- arrange(clim_lam, year, population)
-  lam_out     <- select(clim_lam, year:log_lambda)
-  clim_out    <- select(clim_lam, -c(year:log_lambda) )
+  lam_out     <- dplyr::select(clim_lam, year:log_lambda)
+  clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
   out         <- list(lambdas = lam_out, climate = clim_out)
   
   return(out)
