@@ -135,7 +135,9 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
     
   }
     
-  clim_lam    <- arrange(clim_lam, year, population)
+  clim_lam    <- arrange(clim_lam, year, population)  %>%
+                  # erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
+                  subset( lambda != 0 )
   lam_out     <- dplyr::select(clim_lam, year:log_lambda)
   clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
   out         <- list(lambdas = lam_out, climate = clim_out)
