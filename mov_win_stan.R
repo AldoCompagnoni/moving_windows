@@ -32,7 +32,8 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 
 # format data ---------------------------------------------------------------------------------------
-spp_name      <- spp[2] # test run w/ spp number 1
+for(ii in 14:35){
+spp_name      <- spp[ii] # test run w/ spp number 1
 m_back        <- 24     # months back
 expp_beta     <- 20
 
@@ -373,6 +374,8 @@ mof  <- merge(mse, devi)
 mod_summs <- Reduce(function(...) merge(...), 
                     list(mod_pars_diag, waics, mof) ) %>%
                     arrange( mse )
-# write.csv(mod_summs, paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",spp_name,".csv"), row.names = F)
-# write.csv(posteriors, paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",spp_name,".csv"), row.names = F)
-# write.csv(cxval_pred, paste0("C:/cloud/MEGA/Projects/sApropos/results/crossval_pred_diag_",spp_name,".csv"), row.names = F)
+write.csv(mod_summs, paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",spp_name,".csv"), row.names = F)
+write.csv(posteriors, paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",spp_name,".csv"), row.names = F)
+write.csv(cxval_pred, paste0("C:/cloud/MEGA/Projects/sApropos/results/crossval_pred_diag_",spp_name,".csv"), row.names = F)
+}
+
