@@ -35,12 +35,17 @@ pred_acc  <- lapply(mod_summ, function(x) x[1,c("mse")]) %>%
 
 
 # the graph
-par(mfrow=c(1,2), mar = c(3.5,3,0.3,0.3), mgp = c(2,0.7,0) )
-barplot(best_mods, ylab = "N. of instances models was best")
+tiff(paste0("results/plots/summaries.tiff"),
+     unit="in", width=6.3,height=3.5,res=600,compression="lzw")
+
+par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
+barplot(best_mods, ylab = "Best model", cex.names = 1.2)
 plot(mse ~ rep_n, pch = 16, 
-     data = pred_acc,
+     data = pred_acc, 
      xlab = "Number of replicates", ylab = "Mean squared error")
 
+dev.off()
 
 
 # single species graphs --------------------------------------------------------------------
@@ -52,7 +57,7 @@ spp_list    <- intersect(gsub(".csv", "", gsub("mod_summaries_", "", sum_files) 
                          )
   
 # loop through (available) species
-for(ii in 1:length(spp_list) ){
+for(ii in 18:length(spp_list) ){
   
 spp_name<- spp_list[ii] # test run w/ spp number 1
 lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv") 
