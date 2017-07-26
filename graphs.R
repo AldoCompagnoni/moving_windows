@@ -7,12 +7,13 @@ options(stringsAsFactors = F )
 
 
 # summary plots ---------------------------------------------------------------------
-sum_files <- list.files("results")[grep("mod_summaries_", list.files("results") )]
-crx_files <- list.files("results")[grep("crossval_", list.files("results") )]
-mod_summ  <- lapply(sum_files, function(x) read.csv(paste0("results/",x)) ) %>%
+res_folder<- "supercomp/res_7.26" 
+sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
+crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
+mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
                 setNames( gsub("mod_summaries_", "", sum_files ) ) %>%
                 setNames( gsub(".csv", "", names(.) ) )
-replic    <- lapply(crx_files, function(x) read.csv(paste0("results/",x)) %>% nrow ) %>%
+replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>% nrow ) %>%
                 setNames( gsub("crossval_pred_diag_", "", crx_files ) ) %>%
                 setNames( gsub(".csv", "", names(.) ) ) %>%
                 unlist %>% t %>% t %>% as.data.frame %>% 
@@ -49,7 +50,7 @@ dev.off()
 
 
 # single species graphs --------------------------------------------------------------------
-post_files  <- list.files("results")[grep("posterior_", list.files("results") )]
+post_files  <- list.files(res_folder)[grep("posterior_", list.files(res_folder) )]
 
 # create species list based on what's available!
 spp_list    <- intersect(gsub(".csv", "", gsub("mod_summaries_", "", sum_files) ),
@@ -57,21 +58,21 @@ spp_list    <- intersect(gsub(".csv", "", gsub("mod_summaries_", "", sum_files) 
                          )
   
 # loop through (available) species
-for(ii in 18:length(spp_list) ){
+for(ii in 1:length(spp_list) ){
   
 spp_name<- spp_list[ii] # test run w/ spp number 1
-lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv") 
-m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv")
-clim    <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/precip_fc_demo.csv") #%>%
+lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
+m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim    <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/precip_fc_demo.csv", stringsAsFactors = F) #%>%
               #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
 # add monthg info to lambda information
 month_add <- m_info %>%
               mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
-              select(SpeciesAuthor, MatrixEndMonth)
-lam_add   <- subset(lam, SpeciesAuthor %in% m_info$SpeciesAuthor) %>%  
-              select(-MatrixEndMonth) %>%
+              dplyr::select(SpeciesAuthor, MatrixEndMonth)
+lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%  
+              dplyr::select(-MatrixEndMonth) %>%
               inner_join(month_add)
 lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
 lambdas   <- bind_rows(lam_min, lam_add) %>%
@@ -95,11 +96,11 @@ mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
 
 
 # read mean values, whole posterior, GAUS MODELS ONLY
-post_df <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",
+post_df <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/",res_folder,"/posterior_",
                     spp_name,".csv") ) %>%
               dplyr::select(-grep("log_lik", names(.)) ) %>%
               subset( model == "gaus" )
-mean_df <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",
+mean_df <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/",res_folder,"/mod_summaries_",
                     spp_name,".csv") ) %>%
               subset( model == "gaus" )
 
@@ -131,8 +132,8 @@ mean_m_sen  <- mean_m_sen / sum(mean_m_sen)
 # figure: i) sensitivity to monthly precip; ii) log_lambda~climate ---------------------------
 tiff(paste0("results/plots/",spp_name,".tiff"),
      unit="in", width=6.3,height=3.5,res=600,compression="lzw")
-par(mfrow=c(1,2), mar=c(3.2,3.2,0.3,0.1), mgp = c(2,0.7,0), cex.lab = 1.2)
 
+par(mfrow=c(1,2), mar=c(3.2,3.2,0.3,0.1), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 # monthly sensitivities 
 plot(month_x, month_x,
@@ -156,7 +157,7 @@ clim_mat   <- sweep(mod_data$climate, 2, mean_m_sen, "*") %>%
 
 # plotting
 clim_x      <- stack(clim_mat) %>%
-                  select(-2) %>%
+                  dplyr::select(-2) %>%
                   setNames(c("x_clim")) %>%
                   bind_cols(mod_data$lambdas)
 
