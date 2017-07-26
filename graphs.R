@@ -20,33 +20,78 @@ replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>
                 tibble::rownames_to_column(var = "species") %>%
                 rename( rep_n = V1)
 
-# best models
-best_mods <- lapply(mod_summ, function(x) x[1,"model"]) %>%
-                unlist %>%
-                table
-                
-# predictive accuracy
-pred_acc  <- lapply(mod_summ, function(x) x[1,c("mse")]) %>%
-                unlist %>%
-                t %>% t %>% 
-                as.data.frame %>%
-                tibble::rownames_to_column(var = "species") %>%
-                rename( mse = V1 ) %>%
-                inner_join( replic )
+# best model by measure of fit (MOF)
+best_mod_by_mof <- function(mof){
+  
+  lapply(mod_summ, function(x) arrange_(x, mof)) %>%
+    lapply(function(x) x[1,"model"]) %>%
+    unlist %>%
+    table
+  
+}
+best_mods <- lapply(c("mse","looic"), best_mod_by_mof) %>%
+                setNames(c("mse","looic"))
+              
+# predictive accuracy by measure of fit
+pred_acc_by_mof <- function(mof){
+  
+  lapply(mod_summ, function(x) arrange_(x, mof)) %>%
+    lapply(function(x) x[1,c(mof)]) %>%
+    unlist %>% t %>% t %>% as.data.frame %>%
+    tibble::rownames_to_column(var = "species") %>%
+    inner_join( replic ) %>%
+    setNames( c("species", mof, paste0("n_rep_",mof)) )
+  
+}
+
+pred_acc_by_mof <- function(mof){
+
+  tmp <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
+    lapply(function(x) x[1,c(mof,"model")]) 
+  tmp <- Map(function(x,y) tibble::add_column(x, species = y, .before = 1), 
+             tmp, names(tmp) )
+         Reduce(function(...) rbind(...), tmp) %>%
+            inner_join( replic ) %>%
+            setNames( c("species", mof , paste0("model_", mof), paste0("rep_n_", mof)) )
+
+}
+pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "looic") )
+pred_acc    <- Reduce(function(...) merge(...), pred_acc_l) %>%
+                  rename( rep_n = rep_n_mse)
 
 
-# the graph
-tiff(paste0("results/plots/summaries.tiff"),
-     unit="in", width=6.3,height=3.5,res=600,compression="lzw")
+# best models   graph
+tiff(paste0("results/plots/best_mods_predictiveAbility.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+par(mfrow=c(2,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
-barplot(best_mods, ylab = "Best model", cex.names = 1.2)
-plot(mse ~ rep_n, pch = 16, 
-     data = pred_acc, 
+
+barplot(best_mods$mse, ylab = "Best model", cex.names = 1.2)
+barplot(best_mods$looic, ylab = "Best model", cex.names = 1.2)
+
+plot(mse ~ rep_n, pch = 16, data = pred_acc, 
      xlab = "Number of replicates", ylab = "Mean squared error")
+plot(looic ~ rep_n, pch = 16, data = pred_acc, 
+     xlab = "Number of replicates", ylab = "looic")
 
 dev.off()
+
+
+# replication of best models
+tiff(paste0("results/plots/best_mod_replication.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,2), mar = c(3.5,3.5,1,0.5), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
+
+hist(pred_acc$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "All data sets")
+hist(subset(pred_acc, model_mse == "expp")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "Power exp")
+hist(subset(pred_acc, model_mse == "ctrl2")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "24 month mean")
+hist(subset(pred_acc, model_mse == "ctrl1")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "NULL")
+
+dev.off()
+
 
 
 # single species graphs --------------------------------------------------------------------
