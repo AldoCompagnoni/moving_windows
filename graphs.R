@@ -60,16 +60,27 @@ pred_acc    <- Reduce(function(...) merge(...), pred_acc_l) %>%
                   rename( rep_n = rep_n_mse)
 
 
-# best models   graph
-tiff(paste0("results/plots/best_mods_predictiveAbility.tiff"),
-     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+# best models  
+tiff(paste0("results/plots/best_mods.tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
-par(mfrow=c(2,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
-barplot(best_mods$mse, ylab = "Best model", cex.names = 1.2)
-barplot(best_mods$looic, ylab = "Best model", cex.names = 1.2)
+best_mods$mse   <- setNames(best_mods$mse, c("NULL", "24mon.", "expp"))
+best_mods$looic <- setNames(best_mods$looic, "Gaussian")
+barplot(best_mods$mse, ylab = "Best model based on MSE", cex.names = 1.2)
+barplot(best_mods$looic, ylab = "Best model based on LOOIC", cex.names = 1.2)
 
+dev.off()
+
+
+# prediction vs. replication
+tiff(paste0("results/plots/prediction_vs_rep.tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
+
+par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
 plot(mse ~ rep_n, pch = 16, data = pred_acc, 
      xlab = "Number of replicates", ylab = "Mean squared error")
 plot(looic ~ rep_n, pch = 16, data = pred_acc, 
