@@ -6,7 +6,30 @@ library(tidyr)
 options(stringsAsFactors = F )
 
 
-# summary plots ---------------------------------------------------------------------
+# read species information ---------------------------------------------------------------------------------
+lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
+
+# summaries organism type/biome
+by_spp_rep <- function(var){
+  
+  lam %>%
+    select( c("SpeciesAuthor", var) ) %>%
+    distinct %>%
+    group_by_(var) %>%
+    summarise(spp_n = n())
+  
+}
+# replication of categories
+categ_rep <- lapply(c("OrganismType","Ecoregion","Order", "Class", "DicotMonoc", "Altitude"), by_spp_rep)
+
+# I would use following categories       
+categ     <- lam %>%
+                select( c("SpeciesAuthor","Ecoregion", "DicotMonoc", "Class") ) %>%
+                rename( species = SpeciesAuthor) %>%
+                unique
+
+
+# summary info ---------------------------------------------------------------------
 res_folder<- "supercomp/res_7.26" 
 sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
 crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
@@ -57,10 +80,12 @@ pred_acc_by_mof <- function(mof){
 }
 pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "looic") )
 pred_acc    <- Reduce(function(...) merge(...), pred_acc_l) %>%
-                  rename( rep_n = rep_n_mse)
+                  rename( rep_n = rep_n_mse) %>%
+                  inner_join( categ )
 
 
-# best models  
+# summary plots ---------------------------------------------------------------------
+# best models
 tiff(paste0("results/plots/best_mods.tiff"),
      unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
@@ -102,6 +127,82 @@ hist(subset(pred_acc, model_mse == "ctrl2")$rep_n, ylim = c(0,8), xlim = c(0,70)
 hist(subset(pred_acc, model_mse == "ctrl1")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "NULL")
 
 dev.off()
+
+
+# calculate number of categories for each "best model"
+best_mod_by_categ <- function(best_mod = NULL, category){
+  
+  if( is.null(best_mod) ){
+    tmp <- pred_acc %>%
+              group_by_( category ) %>%
+              summarise( rep = n() ) %>%
+              as.data.frame %>% t
+  } else{
+    tmp <- pred_acc %>%
+      subset( model_mse == best_mod ) %>%
+      group_by_( category ) %>%
+      summarise( rep = n() ) %>%
+      as.data.frame %>% t
+  }
+  df <- matrix(tmp[2,], nrow=1, ncol=length(tmp[2,]), byrow=T) %>%
+            as.data.frame %>%
+            setNames( tmp[1,] ) %>% as.matrix()
+  return(df)
+  
+}
+
+# best model by ecoregion
+tiff(paste0("results/plots/best_mod_by_ecoregion.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
+    cex.lab = 1.2)
+
+barplot( best_mod_by_categ(NULL,"Ecoregion"), main = "Representation across species", ylim = c(0,14))
+barplot( best_mod_by_categ("expp","Ecoregion"), main = "Power Exponential", ylim = c(0,14) )
+barplot( best_mod_by_categ("ctrl2","Ecoregion"), main = "24 Months", ylim = c(0,14) )
+barplot( best_mod_by_categ("ctrl1","Ecoregion"), main = "NULL", ylim = c(0,14) )
+
+dev.off()
+
+# best model by DicotMonoc
+tiff(paste0("results/plots/best_mod_by_DicotMonoc.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
+    cex.lab = 1.2)
+
+barplot( best_mod_by_categ(NULL,"DicotMonoc"), main = "Representation across species", ylim = c(0,29))
+barplot( best_mod_by_categ("expp","DicotMonoc"), main = "Power Exponential", ylim = c(0,29) )
+barplot( best_mod_by_categ("ctrl2","DicotMonoc"), main = "24 Months", ylim = c(0,29) )
+barplot( best_mod_by_categ("ctrl1","DicotMonoc"), main = "NULL", ylim = c(0,29) )
+
+dev.off()
+
+# best model by Class
+tiff(paste0("results/plots/best_mod_by_Class.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
+    cex.lab = 1.2)
+
+barplot( best_mod_by_categ(NULL,"Class"), main = "Representation across species", ylim = c(0,29))
+barplot( best_mod_by_categ("expp","Class"), main = "Power Exponential", ylim = c(0,29) )
+barplot( best_mod_by_categ("ctrl2","Class"), main = "24 Months", ylim = c(0,29) )
+barplot( best_mod_by_categ("ctrl1","Class"), main = "NULL", ylim = c(0,29) )
+
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
 
 
 
