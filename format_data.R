@@ -147,31 +147,69 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
 }
 
 
-# test functions ------------------------------------------------
-# 
-# setwd("C:/cloud/Dropbox/sAPROPOS project/DemogData")
-# library(dplyr)
-# library(tidyr)
+# observed cliamtic range
+observed_clim_range <- function(clim_x, lambda_d, spp_name){
+  
+  # format day one
+  day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
+                        format="%d/%m/%Y") 
+  
+  # climate data
+  clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
+                  as.character %>%
+                  as.data.frame(stringsAsFactors=F) %>%
+                  separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
+                  bind_cols(clim_x) %>%
+                  dplyr::select(-year,-day) %>%
+                  setNames( c("year", "month", "day", "species", "ppt") )
+  
+  # monthly climates
+  clim_m   <- clim_d %>%
+                  group_by(year, month) %>%
+                  summarise( ppt = sum(ppt, na.rm=T) ) %>%
+                  ungroup %>%
+                  mutate( month = as.numeric(month) ) %>%
+                  mutate( year = as.numeric(year) ) 
+  
+  # range of years
+  max_yr    <- max(lambda_d$year)
+  min_yr    <- min(lambda_d$year)
+  month_i   <- unique(lambda_d$month)
+  
+  yearly_climate <- function(yrs){
+    
+    year_clim <- clim_m %>% subset( year == yrs & month < month_i + 1 )
+    
+    if( unique(lambda_d$month) != 12 ){
+     
+     append     <- clim_m %>% 
+                      subset( year == (yrs-1) & month > month_i )
+     year_clim  <- rbind(year_clim, append)
+     
+    }
+  
+    data.frame( year = yrs, ppt = sum(year_clim$ppt) )
+    
+  }
+  
+  # yearly climates
+  yr_range  <- (max_yr-48):max_yr
+  yr_clim_l <- lapply(yr_range, yearly_climate)
+  yr_clim   <- Reduce(function(...) rbind(...), yr_clim_l)
 
-# # read data -----------------------------------------------------
-# lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) %>%
-#             subset( !is.na(MatrixEndMonth) )
-# clim    <- read.csv("precip_fc_demo.csv",  stringsAsFactors = F)
-# spp     <- clim$species %>% unique
-
-
-# read data -----------------------------------------------------
-
-# spp_name      <- spp[3] # test run w/ spp number 1
-# m_back        <- 24     # months back
-# 
-# # lambda data
-# spp_lambdas   <- format_species(spp_name, lam)
-# 
-# # climate data
-# clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-# clim_detrnded <- lapply(clim_separate, clim_detrend)
-# clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
-# 
-# # model data
-# mod_data  <- lambda_plus_clim(spp_lambdas, clim_mats)
+  # observed range of anomalies
+  tot_range <- max(yr_clim$ppt) - min(yr_clim$ppt)
+  obs_clim  <- subset(yr_clim, year >= min_yr & year <= max_yr )
+  obs_range <- max(obs_clim$ppt) - min(obs_clim$ppt)
+  
+  extr_yr_n <- sum(yr_clim$ppt > max(obs_clim$ppt)) + sum(yr_clim$ppt < min(obs_clim$ppt)) 
+  prop_yrs  <- (48-extr_yr_n) / 48 
+  prop_rang <- obs_range / tot_range
+    
+  return( data.frame( species   = spp_name, 
+                      prop_rang = prop_rang, 
+                      prop_yrs  = prop_yrs )
+         )
+  
+}
+  
