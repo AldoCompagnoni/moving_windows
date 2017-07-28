@@ -111,6 +111,9 @@ best_mod_by_categ <- function(best_mod = NULL, category){
 }
 
 
+pred_acc 
+
+
 # summary plots ----------------------------------------------------------------------------------
 
 # best models
@@ -169,48 +172,16 @@ barplot( best_mod_by_categ("ctrl1","Ecoregion"), main = "NULL", ylim = c(0,14) )
 
 dev.off()
 
-# # best model by DicotMonoc
-# tiff(paste0("results/plots/best_mod_by_DicotMonoc.tiff"),
-#      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
-# 
-# par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
-#     cex.lab = 1.2)
-# 
-# barplot( best_mod_by_categ(NULL,"DicotMonoc"), main = "Representation across species", ylim = c(0,29))
-# barplot( best_mod_by_categ("expp","DicotMonoc"), main = "Power Exponential", ylim = c(0,29) )
-# barplot( best_mod_by_categ("ctrl2","DicotMonoc"), main = "24 Months", ylim = c(0,29) )
-# barplot( best_mod_by_categ("ctrl1","DicotMonoc"), main = "NULL", ylim = c(0,29) )
-# 
-# dev.off()
-# 
-# # best model by Class
-# tiff(paste0("results/plots/best_mod_by_Class.tiff"),
-#      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
-# 
-# par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
-#     cex.lab = 1.2)
-# 
-# barplot( best_mod_by_categ(NULL,"Class"), main = "Representation across species", ylim = c(0,29))
-# barplot( best_mod_by_categ("expp","Class"), main = "Power Exponential", ylim = c(0,29) )
-# barplot( best_mod_by_categ("ctrl2","Class"), main = "24 Months", ylim = c(0,29) )
-# barplot( best_mod_by_categ("ctrl1","Class"), main = "NULL", ylim = c(0,29) )
-# 
-# dev.off()
-
-
-
-
 
 # best model by climate sampled --------------------------------------------------------------
 
+# climate info 
+spp_list      <- lambdas$SpeciesAuthor %>% 
+                    unique %>% 
+                    sort %>% 
+                    .[-12] # what happened with Daphne_rodriguezii?!?
 
-
-
-
-# climate info ------------------------------------------------------------------------
-spp_list      <- lambdas$SpeciesAuthor %>% unique %>% sort
-spp_list      <- spp_list[-12] # what happened with Daphne_rodriguezii?!?
-
+# create proportion of obeserved climates
 clim_obs_wrapper <- function(spp_name){
   
   # lambda data
@@ -236,7 +207,7 @@ clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
 
 
 
-# best model by observed climate range
+# best model by observed climate range -----------------------------------------
 obs_clim_rng <- merge(pred_acc, clim_rng_m)
 
 tiff(paste0("results/plots/best_mod_by_climate_sampled.tiff"),
@@ -254,13 +225,41 @@ boxplot(prop_yrs ~ model_mse, data = obs_clim_rng,
 dev.off()
 
 
+tiff(paste0("results/plots/best_mod_MSE_by_climate_sampled.tiff"),
+     unit="in", width=3.5, height=6.3, res=600,compression="lzw")
+
 par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
-plot(mse ~ prop_rang,xlab = "Proportion of climate observed", 
-     pch = 16, data = obs_clim_rng)
+plot(mse ~ prop_rang,xlab = "Proportion of climate values observed",
+     ylab = "Best model MSE", pch = 16, data = obs_clim_rng)
 plot(mse ~ prop_yrs, xlab = "Proportion of extreme years observed", 
-     pch = 16, data = obs_clim_rng)
+     ylab = "Best model MSE", pch = 16, data = obs_clim_rng)
+
+dev.off()
 
 
-subset(obs_clim_rng, prop_rang == 1)
-subset(obs_clim_rng, prop_yrs  == 0)
+# Models on climate/no -------------------------------------------------------------
+
+mod_climate <- pred_acc %>%
+                  mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
+                  mutate( model_climate = sub("ctrl2|expp", "1", model_climate)) %>%
+                  mutate( model_climate = as.numeric(model_climate)) %>%
+                  mutate( Ecoregion = as.factor(Ecoregion)) %>%
+                  mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
+                  mutate( Class = as.factor(Class)) %>%
+                  inner_join( clim_rng_m )
+  
+
+mod_sample_size <- glm(model_climate ~ rep_n, family = "binomial", data = mod_climate)
+mod_prop_rang   <- glm(model_climate ~ prop_rang, family = "binomial", data = mod_climate)
+mod_prop_yrs    <- glm(model_climate ~ prop_yrs, family = "binomial", data = mod_climate)
+
+mod_ecoregion   <- glm(model_climate ~ Ecoregion, family = "binomial", data = mod_climate)
+mod_dicot_mono  <- glm(model_climate ~ DicotMonoc, family = "binomial", data = mod_climate)
+mod_class       <- glm(model_climate ~ Class, family = "binomial", data = mod_climate)
+
+# analyze results
+res_summary_mod <- lapply( list(mod_sample_size, mod_prop_rang, mod_prop_yrs,
+                            mod_ecoregion, mod_dicot_mono, mod_class) , summary) %>%
+                      setNames(c("sample_size", "prop_rang", "prop_yrs",
+                               "ecoregion", "dicot_mono","class"))
