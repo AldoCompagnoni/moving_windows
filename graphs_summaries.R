@@ -84,21 +84,28 @@ pred_acc_by_mof <- function(mof){
 
 }
 pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "looic") )
-pred_acc    <- Reduce(function(...) merge(...), pred_acc_l) %>%
+mod_climate <- Reduce(function(...) merge(...), pred_acc_l) %>%
                   rename( rep_n = rep_n_mse) %>%
-                  inner_join( categ )
+                  inner_join( categ ) %>%
+                  mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
+                  mutate( model_climate = sub("ctrl2|expp", "1", model_climate)) %>%
+                  mutate( model_climate = as.numeric(model_climate)) %>%
+                  mutate( Ecoregion = as.factor(Ecoregion)) %>%
+                  mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
+                  mutate( Class = as.factor(Class)) %>%
+                  inner_join( clim_rng_m )
 
 # calculate number of categories for each "best model"
 best_mod_by_categ <- function(best_mod = NULL, category){
   
   if( is.null(best_mod) ){
-    tmp <- pred_acc %>%
+    tmp <- mod_climate %>%
       group_by_( category ) %>%
       summarise( rep = n() ) %>%
       as.data.frame %>% t
   } else{
-    tmp <- pred_acc %>%
-      subset( model_mse == best_mod ) %>%
+    tmp <- mod_climate %>%
+      subset( model_climate == best_mod ) %>%
       group_by_( category ) %>%
       summarise( rep = n() ) %>%
       as.data.frame %>% t
@@ -109,9 +116,6 @@ best_mod_by_categ <- function(best_mod = NULL, category){
   return(df)
   
 }
-
-
-pred_acc 
 
 
 # summary plots ----------------------------------------------------------------------------------
@@ -150,10 +154,9 @@ tiff(paste0("results/plots/best_mod_replication.tiff"),
 par(mfrow=c(2,2), mar = c(3.5,3.5,1,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
-hist(pred_acc$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "All data sets")
-hist(subset(pred_acc, model_mse == "expp")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "Power exp")
-hist(subset(pred_acc, model_mse == "ctrl2")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "24 month mean")
-hist(subset(pred_acc, model_mse == "ctrl1")$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "NULL")
+hist(mod_climate$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "All data sets")
+hist(subset(mod_climate, model_climate == 0)$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "No climate")
+hist(subset(mod_climate, model_climate == 1)$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "Climate")
 
 dev.off()
 
@@ -162,13 +165,11 @@ dev.off()
 tiff(paste0("results/plots/best_mod_by_ecoregion.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0),
-    cex.lab = 1.2)
-
-barplot( best_mod_by_categ(NULL,"Ecoregion"), main = "Representation across species", ylim = c(0,14))
-barplot( best_mod_by_categ("expp","Ecoregion"), main = "Power Exponential", ylim = c(0,14) )
-barplot( best_mod_by_categ("ctrl2","Ecoregion"), main = "24 Months", ylim = c(0,14) )
-barplot( best_mod_by_categ("ctrl1","Ecoregion"), main = "NULL", ylim = c(0,14) )
+par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
+barplot( best_mod_by_categ(NULL,"Ecoregion"), main = "Representation across species", 
+         ylim = c(0,14), col = "grey")
+barplot( best_mod_by_categ(1,"Ecoregion"), main = "Climate", ylim = c(0,14), col = "grey")
+barplot( best_mod_by_categ(0,"Ecoregion"), main = "NULL", ylim = c(0,14), col = "grey")
 
 dev.off()
 
@@ -208,47 +209,39 @@ clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
 
 
 # best model by observed climate range -----------------------------------------
-obs_clim_rng <- merge(pred_acc, clim_rng_m)
+obs_clim_rng <- merge(mod_climate, clim_rng_m)
 
 tiff(paste0("results/plots/best_mod_by_climate_sampled.tiff"),
-     unit="in", width=3.5, height=6.3, res=600,compression="lzw")
+     unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
-boxplot(prop_rang ~ model_mse, data = obs_clim_rng,
-        names = c("Null", "24.mon", "Expp"), ylab = "Proportion of climate observed",
+boxplot(prop_rang ~ model_climate, data = obs_clim_rng,
+        names = c("No Climate", "Climate"), ylab = "Proportion of climate observed",
         ylab = "Proportion")
-boxplot(prop_yrs ~ model_mse, data = obs_clim_rng,
-        names = c("Null", "24.mon", "Expp"), ylab = "Proportion of extreme years",
+boxplot(prop_yrs ~ model_climate, data = obs_clim_rng,
+        names = c("No Climate", "Climate"), ylab = "Proportion of extreme years",
         ylab = "Proportion")
 
 dev.off()
 
 
 tiff(paste0("results/plots/best_mod_MSE_by_climate_sampled.tiff"),
-     unit="in", width=3.5, height=6.3, res=600,compression="lzw")
+     unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 plot(mse ~ prop_rang,xlab = "Proportion of climate values observed",
-     ylab = "Best model MSE", pch = 16, data = obs_clim_rng)
-plot(mse ~ prop_yrs, xlab = "Proportion of extreme years observed", 
-     ylab = "Best model MSE", pch = 16, data = obs_clim_rng)
+     ylab = "Best model MSE", pch = 16, data = obs_clim_rng, col = "black")
+plot(mse ~ prop_yrs, xlab = "Proportion of extreme years observed",
+     ylab = "Best model MSE", pch = 16, data = obs_clim_rng, col = "black")
 
 dev.off()
 
 
 # Models on climate/no -------------------------------------------------------------
 
-mod_climate <- pred_acc %>%
-                  mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
-                  mutate( model_climate = sub("ctrl2|expp", "1", model_climate)) %>%
-                  mutate( model_climate = as.numeric(model_climate)) %>%
-                  mutate( Ecoregion = as.factor(Ecoregion)) %>%
-                  mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
-                  mutate( Class = as.factor(Class)) %>%
-                  inner_join( clim_rng_m )
-  
+
 
 mod_sample_size <- glm(model_climate ~ rep_n, family = "binomial", data = mod_climate)
 mod_prop_rang   <- glm(model_climate ~ prop_rang, family = "binomial", data = mod_climate)
