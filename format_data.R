@@ -193,22 +193,39 @@ observed_clim_range <- function(clim_x, lambda_d, spp_name){
   }
   
   # yearly climates
-  yr_range  <- (max_yr-48):max_yr
-  yr_clim_l <- lapply(yr_range, yearly_climate)
-  yr_clim   <- Reduce(function(...) rbind(...), yr_clim_l)
-
-  # observed range of anomalies
-  tot_range <- max(yr_clim$ppt) - min(yr_clim$ppt)
-  obs_clim  <- subset(yr_clim, year >= min_yr & year <= max_yr )
-  obs_range <- max(obs_clim$ppt) - min(obs_clim$ppt)
+  all_yrs   <- (max_yr-48):max_yr
+  yr_clim_l <- lapply(all_yrs, yearly_climate)
+  full_clim <- Reduce(function(...) rbind(...), yr_clim_l)
+  obs_clim  <- subset(full_clim, year >= min_yr & year <= max_yr )
   
-  extr_yr_n <- sum(yr_clim$ppt > max(obs_clim$ppt)) + sum(yr_clim$ppt < min(obs_clim$ppt)) 
+  # climate in full data set
+  full_rng  <- max(full_clim$ppt) - min(full_clim$ppt)
+  full_mean <- mean(full_clim$ppt)
+  full_med  <- median(full_clim$ppt)
+  full_sd   <- sd(full_clim$ppt)
+  full_dev  <- range(abs(full_mean - full_clim$ppt))
+  full_dev_r<- range(abs(full_med - full_clim$ppt))
+  
+  # observed range of climate anomalies
+  obs_dev   <- range( abs(full_mean - obs_clim$ppt) )
+  obs_dev_r <- range( abs(full_med - obs_clim$ppt) )
+  obs_range <- max(obs_clim$ppt) - min(obs_clim$ppt)
+  extr_yr_n <- sum(full_clim$ppt > max(obs_clim$ppt)) + sum(full_clim$ppt < min(obs_clim$ppt)) 
+  obs_mean  <- mean(obs_clim$ppt)
+  
+  # proportions and means
   prop_yrs  <- (48-extr_yr_n) / 48 
-  prop_rang <- obs_range / tot_range
-    
+  prop_rang <- obs_range / full_rng
+  prop_var  <- (obs_dev[2] - obs_dev[1]) / (full_dev[2] - full_dev[1])
+  prop_var_r<- (obs_dev_r[2] - obs_dev_r[1]) / (full_dev_r[2] - full_dev_r[1])
+  mean_dev  <- (full_mean - obs_mean) / full_sd
+  
   return( data.frame( species   = spp_name, 
                       prop_rang = prop_rang, 
-                      prop_yrs  = prop_yrs )
+                      prop_yrs  = prop_yrs,
+                      prop_var  = prop_var,
+                      prop_var_r= prop_var_r,
+                      mean_dev  = mean_dev)
          )
   
 }
