@@ -1,162 +1,170 @@
-bjtwd<-"C:/Users/admin_bjt162/Dropbox/A.Current/Ongoing_Collab_Research/sApropos project/"
-#afcwd<-"C:/Users/Aldo/Dropbox/sAPROPOS project/"
-setwd(bjtwd)
-spp_list
-
-library(climwin)
-library(dplyr)
-library(tidyr)
-library(rjags)
+#bjtwd<-"C:/Users/admin_bjt162/Dropbox/A.Current/Ongoing_Collab_Research/sApropos project/"
+setwd("C:/cloud/Dropbox/sAPROPOS project/")
+source("~/moving_windows/format_data.R")
+library(tidyverse)
 library(dismo)
+library(mgcv)
 
-# read data
-d       <- read.csv("DemogData/lambdas.csv")
-precip  <- read.csv("DemogData/climate_data/monthly_ppt_Dalgleish.csv")
 
-for(ii in c(1,3)){
+# read data -----------------------------------------------------------------------------------------
+lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
+m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
+              #mutate( ppt = ppt / 30)
+spp     <- clim$species %>% unique
 
-  # analysis parameters  
-  spp     <- ii
-  m_back  <- 24
+# add monthg info to lambda information
+month_add <- m_info %>%
+                mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
+                dplyr::select(SpeciesAuthor, MatrixEndMonth)
+lam_add   <- subset(lam, SpeciesAuthor %in% m_info$SpeciesAuthor) %>%  
+                dplyr::select(-MatrixEndMonth) %>%
+                inner_join(month_add)
+lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
+lambdas   <- bind_rows(lam_min, lam_add) %>%
+                subset( !is.na(MatrixEndMonth) &
+                        !is.na(Lat) & !is.na(Lon))
+
+mod_sum_l <- list()
+spp_list  <- lambdas$SpeciesAuthor %>% unique   
+spp_list  <- spp_list[-c(2,3,8,14,18,19,20)]
+
+# perliminary format of species-level data ------------------------------------------------------
+for(ii in 1:length(spp_list)){
   
-  # format species ---------------------------------------------------
+  spp_name      <- spp_list[ii] # test run w/ spp number 1
+  m_back        <- 24     # months back
+  expp_beta     <- 20
   
-  # select species
-  spp_dur <- d %>% 
-    group_by(SpeciesAccepted) %>% 
-    summarise(duration = length(unique(MatrixStartYear)))
+  # lambda data
+  spp_lambdas   <- format_species(spp_name, lambdas)
   
-  # species list
-  spp_list<- d %>%
-    subset(Lat == 38.8 & Lon == -99.2) %>%
-    .[,"SpeciesAccepted"] %>%
-    as.character %>%
-    unique
+  # climate data
+  clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+  clim_detrnded <- lapply(clim_separate, clim_detrend)
+  clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
   
-  # lambdas
-  xx     <- d %>%
-    subset(SpeciesAccepted == spp_list[spp]) %>%
-    dplyr::select(MatrixEndYear, lambda) %>%
-    setNames(c("year","lambda")) %>%
-    mutate(log_lambda = log(lambda))
+  # model data
+  mod_data          <- lambda_plus_clim(spp_lambdas, clim_mats)
+  mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
   
-  # format climate ---------------------------------------------------------
   
-  # detrend climate
-  m_means <- colMeans(precip, na.rm=T)[-1]
-  d_prec  <- apply(precip[,-1], 2, FUN = scale, center = T, scale = T) 
-  det_prec<- cbind(precip[,1],d_prec) %>% as.data.frame
-  names(det_prec)[1] <- "YEAR"           
+  # format data for splines --------------------------------------------------------
   
-  # select precipitation range
-  pr_long <- det_prec %>%
-    subset(YEAR < 1974 & YEAR > 1934) %>%
-    gather(month,precip,JAN:DEC) %>%
-    setNames(c("year", "month", "precip")) %>%
-    mutate(month = factor(month, levels = toupper(month.abb)) ) %>%
-    mutate(month = as.numeric(month)) %>%
-    arrange(year, month)
+  # precipitation matrix
+  pmat      <- mod_data$climate %>% setNames(NULL) %>% as.matrix
   
-  # array for # months before each sampling date.
-  prec_form <- function(x,dat,var){
-    
-    id <- which(dat$year == x & dat$month == 7) #"JUL"
-    r  <- c(id:(id-(m_back-1)))
-    return(dat[r,var])
-    
-  }
-  
-  # calculate monthly precipitation values
-  years   <- xx$year %>% unique
-  years   <- years[order(years)]
-  prec_l  <- lapply(years, prec_form, pr_long, "precip")
-  
-  # put all in matrix form 
-  mat_form<- function(x) { 
-    do.call(cbind, x) %>% 
-      as.data.frame %>%
-      setNames(years) 
-  }
-  x_prec  <- mat_form(prec_l)
-  x_prec  <- x_prec / diff(range(x_prec))
-  
-  pmat<-t(x_prec)
-  
-  lags <- matrix(0,nrow(pmat),ncol(pmat)); 
+  # set up lags
+  lags      <- matrix(0, nrow(mod_data$climate), ncol(mod_data$climate)); 
   for(i in 1:ncol(lags)) lags[,i]=i; 
-  lags=as.matrix(lags); 
+  lagsm     <- as.matrix(lags); 
   
-  pmat <- pmat/diff(range(pmat));
+  # assemble final data frame
+  # pmat <- pmat/diff(range(pmat));
+  dat       <- cbind(mod_data$lambdas, pmat)
+  dat       <- as.data.frame(dat, colnames=TRUE)
+  dat$lags  <- lags
+  dat$pmat  <- pmat
   
-  dat<-cbind(xx,pmat)
-  dat<-as.data.frame(dat, colnames=TRUE)
-  dat$lags<-lags
-  dat$pmat<-pmat
   
-  mod2<-gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs"),
-            data=dat,method="GCV.Cp",gamma=1.4) 
+  # model fits -----------------------------------------------------------------------------------
   
-  tiff(file=paste0("Code/climwin/COMPADRE/results/",spp_list[ii],"_spline.tiff"), 
-       unit="in", width=12,height=7,res=400,compression="lzw")
+  # fit full model
+  mod_full  <-gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs"),
+                  data=dat,method="GCV.Cp",gamma=1.4) 
   
-  par(mfrow=c(1,2))
-  plot(mod2,main=spp_list[ii])
+  # crossvalidation function
+  crxval_spline <- function(i, dat, pmat){
+    
+    dati        <- dat[-i,]
+    pred_null    <- mean( dat$log_lambda[-i] )
+    
+    mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod2$sp),
+                       method="GCV.Cp",gamma=1.4, data=dati) 
+    
+    pred_oo     <- predict(mod_loo, newdata = dat[i,], type="response")
+    
+    data.frame( pred_null = pred_null, 
+                pred_oo   = pred_oo )
+    
+  }
+  # apply function, and create data frame
+  crxval_l    <- lapply(1:nrow(dat), crxval_spline, dat, pmat)
+  crxval_df   <- Reduce(function(...) rbind(...), crxval_l)
+  
+  # Mean squared error
+  dev0        <- calc.deviance(crxval_df$pred_null, dat$log_lambda, 
+                               weights = rep(1, nrow(crxval_df) ),  
+                               family="gaussian", calc.mean = TRUE)  
+  dev1        <- calc.deviance(crxval_df$pred_oo, dat$log_lambda, 
+                               weights = rep(1, nrow(crxval_df) ),  
+                               family="gaussian", calc.mean = TRUE)
+  
+ 
+  # plot results ---------------------------------------------------------------
+  tiff(paste0("C:/cloud/MEGA/Projects/sApropos/results/splines/plots/",spp_name,".tiff"),
+       unit="in", width=6.3, height=3.15, res=400, compression="lzw")
+  
+  par(mfrow=c(1,2), mar = c(3,3,1.7,0.1), mgp = c(1.8,0.7,0))
+  plot(mod_full)
+  mtext(spp_name, side = 3, line = 0.4,
+        at = par("usr")[2], cex = 1.5)
   abline(h=0)
   
-  uniYears<-rownames(pmat)
-  predNull<-rep(NA,times=length(uniYears))
-  pred2<-rep(NA,times=length(uniYears))
+  # plot populations separately
+  pops <- dat$population %>% unique
   
-  for (i in 1:nrow(pmat)){
-    dati<-dat[-i,]
-    predNull[i]<-mean(dat$log_lambda[-i])
+  # all lambdas (for limits of y-axis)
+  all_llam  <- c(dat$log_lambda, crxval_df$pred_null, crxval_df$pred_oo) 
+  
+  # graph lambdas 
+  for(p in 1:length(pops)){
     
-    mod2.loo<-gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod2$sp),
-                  method="GCV.Cp",gamma=1.4, data=dati) 
+    # population index
+    pop_i     <- which(dat$population == pops[p])
     
-    pred2[i]<-predict(mod2.loo,newdata = dat[i,], type="response")
-    print(c(ii,i))
+    # prepare data for plotting
+    plot_data <- dat[pop_i,]
+    plot_null <- crxval_df$pred_null[pop_i]
+    plot_pred <- crxval_df$pred_oo[pop_i]
+    
+    if( p == 1){
+      plot(plot_data$log_lambda ~ plot_data$year, type="o", ylim = range(all_llam),
+           ylab="logLambda", xlab="Left-out year", col="black")
+      
+    } else{
+      points(plot_data$log_lambda ~ plot_data$year, type="o",
+           ylab="logLambda", xlab="Left-out year", col="black")
+    }
+    points(plot_null ~ plot_data$year, type="o", col="red", lty = p)
+    points(plot_pred ~ plot_data$year, type="o", col="blue", lty = p)
+    
   }
-
-  winPred<-read.csv(paste0("Code/climwin/COMPADRE/results/moving_window_spp",ii,"_pred.csv"),header=T)
   
-  dev0<-calc.deviance(predNull, dat$log_lambda, 
-                      weights = rep(1,length(pred2)),  
-                      family="gaussian", calc.mean = TRUE)  
-  dev1<-calc.deviance(pred2, dat$log_lambda, 
-                weights = rep(1,length(pred2)),  
-                family="gaussian", calc.mean = TRUE)
-  devg<-calc.deviance(winPred$pred_gaus, dat$log_lambda, 
-                      weights = rep(1,length(pred2)),  
-                      family="gaussian", calc.mean = TRUE)
-  deve<-calc.deviance(winPred$pred_expp, dat$log_lambda, 
-                      weights = rep(1,length(pred2)),  
-                      family="gaussian", calc.mean = TRUE)
-  devi<-calc.deviance(winPred$pred_c1, dat$log_lambda, 
-                      weights = rep(1,length(pred2)),  
-                      family="gaussian", calc.mean = TRUE)
-  dev24<-calc.deviance(winPred$pred_c2, dat$log_lambda, 
-                      weights = rep(1,length(pred2)),  
-                      family="gaussian", calc.mean = TRUE)
+  legend("topright", c("full model", "NULL", "crossval"),
+         col=c("black", "red", "blue"),
+         lty = c(1, 1, 1), cex = 0.8, lwd = 2 , bty="n")
   
-  plot(dat$log_lambda~as.numeric(as.character(uniYears)), type="o", ylab="logLambda", xlab="Left-out year", col="black", main=spp_list[ii], ylim=c(-3,4))
-  points(predNull~as.numeric(as.character(uniYears)), type="o", col="red")
-  points(winPred$pred_c1~as.numeric(as.character(uniYears)), type="o", col="yellow")
-  points(winPred$pred_c2~as.numeric(as.character(uniYears)), type="o", col="orange")
-  points(pred2~as.numeric(as.character(uniYears)), type="o", col="blue")
-  points(winPred$pred_expp~as.numeric(as.character(uniYears)), type="o", col="green")
-  points(winPred$pred_gaus~as.numeric(as.character(uniYears)), type="o", col="purple")
-
+  # legends deviance
   dev.0=round(dev0,3)
   dev.1=round(dev1,3)
-  dev.g=round(devg,3)
-  dev.e=round(deve,3)
-  dev.i=round(devi,3)
-  dev.24=round(dev24,3)
   
-  legend("topright", pch=1,lty=1, col=c("black","blue","red","purple","green"),
-         legend=c("Real loglambda", paste("Climate Spline; dev=",dev.1),paste("Nothing; dev=",dev.0), paste("Window G; dev=",dev.g),
-                  paste("Window E; dev=",dev.e),paste("Window I; dev=",dev.i),paste("Window 24; dev=",dev.24)), bty="n")
+  legend("bottomleft", 
+         c(paste0("NULL mse: ",dev.0), paste0("Full. Mod. mse: ",dev.1)), 
+         col=c( rep("black",length(pops)+1), "red", "blue"),
+         lty = c(seq_along(pops), 1, 1, 1), bty="n", cex = 0.8)
   
   dev.off()
+
+  mod_sum_l[[ii]] <- crxval_df %>%
+                        mutate( dev0 = dev0,
+                                dev1 = dev1,
+                                speices = spp_name)
+                    
 }
+
+# summary figures
+mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l) 
+write.csv(mod_sum_df, 
+          "C:/cloud/MEGA/Projects/sApropos/results/splines/spline_summaries.csv",
+          row.names=F)
