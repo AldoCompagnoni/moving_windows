@@ -214,7 +214,7 @@ clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
 obs_clim_rng <- merge(mod_climate, clim_rng_m)
 
 tiff(paste0("results/plots/best_mod_by_climate_sampled.tiff"),
-     unit="in", width=3.6, height=6.3, res=600,compression="lzw")
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
@@ -235,7 +235,7 @@ dev.off()
 
 
 tiff(paste0("results/plots/best_mod_by_mean_climate_sampled.tiff"),
-     unit="in", width=3.6, height=6.3, res=600,compression="lzw")
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
