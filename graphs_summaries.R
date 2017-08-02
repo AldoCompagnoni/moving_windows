@@ -261,16 +261,23 @@ dev.off()
 
 
 # Models on climate/no -------------------------------------------------------------
-mod_sample_size <- glm(model_climate ~ rep_n, family = "binomial", data = mod_climate)
-mod_prop_rang   <- glm(model_climate ~ prop_rang, family = "binomial", data = mod_climate)
-mod_prop_yrs    <- glm(model_climate ~ prop_yrs, family = "binomial", data = mod_climate)
+model_climate_mods <- list(
+  model_climate ~ rep_n,
+  model_climate ~ prop_rang,
+  model_climate ~ prop_yrs,
+  model_climate ~ prop_var,
+  model_climate ~ prop_var_r,
+  model_climate ~ mean_dev,
+  model_climate ~ Ecoregion,
+  model_climate ~ DicotMonoc,
+  model_climate ~ Class
+)
 
-mod_ecoregion   <- glm(model_climate ~ Ecoregion, family = "binomial", data = mod_climate)
-mod_dicot_mono  <- glm(model_climate ~ DicotMonoc, family = "binomial", data = mod_climate)
-mod_class       <- glm(model_climate ~ Class, family = "binomial", data = mod_climate)
-
-# analyze results
-res_summary_mod <- lapply( list(mod_sample_size, mod_prop_rang, mod_prop_yrs,
-                            mod_ecoregion, mod_dicot_mono, mod_class) , summary) %>%
-                      setNames(c("sample_size", "prop_rang", "prop_yrs",
+# fit models
+models <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", data = obs_clim_rng)) %>%
+                    setNames(c("sample_size", "prop_rang", "prop_yrs",
+                               "mod_prop_var", "mod_prop_var_r", "mod_prop_mean",
                                "ecoregion", "dicot_mono","class"))
+
+# summarise model results
+res_summary_mod <- lapply(models, summary)
