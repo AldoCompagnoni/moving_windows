@@ -17,17 +17,16 @@ spp     <- clim$species %>% unique
 month_add <- m_info %>%
                 mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
                 dplyr::select(SpeciesAuthor, MatrixEndMonth)
-lam_add   <- subset(lam, SpeciesAuthor %in% m_info$SpeciesAuthor) %>%  
+lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%  
                 dplyr::select(-MatrixEndMonth) %>%
                 inner_join(month_add)
 lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
 lambdas   <- bind_rows(lam_min, lam_add) %>%
-                subset( !is.na(MatrixEndMonth) &
-                        !is.na(Lat) & !is.na(Lon))
+                subset( !is.na(MatrixEndMonth) )
 
 mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
-spp_list  <- spp_list[-c(2,3,8,14,18,19,20)]
+spp_list  <- spp_list[-c(2,3,4,8,9,16,21,22,24)] #,3,8,14,18,19,20)]
 
 # perliminary format of species-level data ------------------------------------------------------
 for(ii in 1:length(spp_list)){
@@ -79,7 +78,7 @@ for(ii in 1:length(spp_list)){
     dati        <- dat[-i,]
     pred_null    <- mean( dat$log_lambda[-i] )
     
-    mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod2$sp),
+    mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod_full$sp),
                        method="GCV.Cp",gamma=1.4, data=dati) 
     
     pred_oo     <- predict(mod_loo, newdata = dat[i,], type="response")
@@ -159,7 +158,7 @@ for(ii in 1:length(spp_list)){
   mod_sum_l[[ii]] <- crxval_df %>%
                         mutate( dev0 = dev0,
                                 dev1 = dev1,
-                                speices = spp_name)
+                                species = spp_name)
                     
 }
 
