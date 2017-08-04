@@ -13,6 +13,7 @@ clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
               #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
+
 # add monthg info to lambda information
 month_add <- m_info %>%
                 mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
@@ -27,6 +28,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
 spp_list  <- spp_list[-c(2,3,4,8,9,16,21,22,24)] #,3,8,14,18,19,20)]
+
 
 # perliminary format of species-level data ------------------------------------------------------
 for(ii in 1:length(spp_list)){
@@ -76,7 +78,7 @@ for(ii in 1:length(spp_list)){
   crxval_spline <- function(i, dat, pmat){
     
     dati        <- dat[-i,]
-    pred_null    <- mean( dat$log_lambda[-i] )
+    pred_null   <- mean( dat$log_lambda[-i] )
     
     mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod_full$sp),
                        method="GCV.Cp",gamma=1.4, data=dati) 
@@ -87,7 +89,7 @@ for(ii in 1:length(spp_list)){
                 pred_oo   = pred_oo )
     
   }
-  # apply function, and create data frame
+  # apply function across samples, and create data frame
   crxval_l    <- lapply(1:nrow(dat), crxval_spline, dat, pmat)
   crxval_df   <- Reduce(function(...) rbind(...), crxval_l)
   
@@ -158,12 +160,12 @@ for(ii in 1:length(spp_list)){
   mod_sum_l[[ii]] <- crxval_df %>%
                         mutate( dev0 = dev0,
                                 dev1 = dev1,
-                                species = spp_name)
+                                species = spp_name )
                     
 }
 
 # summary figures
-mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l) 
+mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l)
 write.csv(mod_sum_df, 
           "C:/cloud/MEGA/Projects/sApropos/results/splines/spline_summaries.csv",
           row.names=F)
