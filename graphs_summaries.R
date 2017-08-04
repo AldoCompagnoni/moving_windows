@@ -275,6 +275,7 @@ model_climate_mods <- list(
   model_climate ~ prop_var,
   model_climate ~ prop_var_r,
   model_climate ~ mean_dev,
+  model_climate ~ mean_clim,
   model_climate ~ Ecoregion,
   model_climate ~ DicotMonoc,
   model_climate ~ Class
@@ -283,7 +284,7 @@ model_climate_mods <- list(
 # fit models
 models <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", data = obs_clim_rng)) %>%
                     setNames(c("sample_size", "prop_rang", "prop_yrs",
-                               "mod_prop_var", "mod_prop_var_r", "mod_prop_mean",
+                               "mod_prop_var", "mod_prop_var_r", "mod_prop_mean","mod_mean_clim",
                                "ecoregion", "dicot_mono","class"))
 
 # summarise model results
@@ -291,7 +292,6 @@ res_summary_mod <- lapply(models, summary)
 
 
 # compare with splines --------------------------------------------------
-
 compare_df <- merge(obs_clim_rng, mod_splin) %>%
                 dplyr::select(species, model_climate, model_climate_spline)
 

@@ -225,7 +225,8 @@ observed_clim_range <- function(clim_x, lambda_d, spp_name){
                       prop_yrs  = prop_yrs,
                       prop_var  = prop_var,
                       prop_var_r= prop_var_r,
-                      mean_dev  = mean_dev)
+                      mean_dev  = mean_dev,
+                      mean_clim = full_mean )
          )
   
 }
