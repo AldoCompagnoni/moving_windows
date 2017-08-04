@@ -28,7 +28,7 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 by_spp_rep <- function(var){
 
   lambdas %>%
-    select( c("SpeciesAuthor", var) ) %>%
+    dplyr::select( c("SpeciesAuthor", var) ) %>%
     distinct %>%
     group_by_(var) %>%
     summarise(spp_n = n())
@@ -40,7 +40,7 @@ categ_rep <- lapply(c("OrganismType","Ecoregion","Order", "Class", "DicotMonoc",
 
 # I chose to use the following categories
 categ     <- lambdas %>%
-                select( c("SpeciesAuthor","Ecoregion", "DicotMonoc", "Class") ) %>%
+                dplyr::select( c("SpeciesAuthor","Ecoregion", "DicotMonoc", "Class") ) %>%
                 rename( species = SpeciesAuthor) %>%
                 unique
 
@@ -58,7 +58,14 @@ replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>
                 unlist %>% t %>% t %>% as.data.frame %>% 
                 tibble::rownames_to_column(var = "species") %>%
                 rename( rep_n = V1)
-
+mod_splin <- read.csv("results/splines/spline_summaries.csv") %>%
+                dplyr::select(species,dev0,dev1) %>%
+                unique %>%
+                mutate( model_climate = 0 ) %>%
+                mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
+                setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
+  
+  
 # best model by measure of fit (MOF)
 best_mod_by_mof <- function(mof){
   
@@ -281,3 +288,15 @@ models <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", dat
 
 # summarise model results
 res_summary_mod <- lapply(models, summary)
+
+
+# compare with splines --------------------------------------------------
+
+compare_df <- merge(obs_clim_rng, mod_splin) %>%
+                dplyr::select(species, model_climate, model_climate_spline)
+
+mod <- glm(model_climate_spline ~ model_climate, family= "binomial", data = compare_df)
+summary(mod)
+
+   
+
