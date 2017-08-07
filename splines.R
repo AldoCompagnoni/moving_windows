@@ -8,8 +8,8 @@ library(mgcv)
 
 # read data -----------------------------------------------------------------------------------------
 lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
-m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv("C:/cloud/MEGA/Projects/sApropos/airt_fc_demo.csv",  stringsAsFactors = F) #%>%
+m_info  <- read.csv("DemogData/MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
               #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
