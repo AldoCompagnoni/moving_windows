@@ -5,6 +5,7 @@ library(dplyr)
 library(tidyr)
 library(loo)
 library(rstan)
+library(dismo)
 library(testthat)
 
 # set rstan options
@@ -183,13 +184,21 @@ posteriors    <- Reduce(function(...) bind_rows(...), posts_l)
 
 # wAIC model selection using loo approximation (from library 'loo')
 log_liks  <- lapply(mod_fit, extract_log_lik)
-loos      <- lapply(log_liks, loo) %>%
-              setNames(c("loo_gaus", "loo_expp", "loo_ctrl1",  "loo_ctrl2"))
 # shiny_eval<- lapply(mod_fit[[1]], launch_shinystan) # evaluate model convergence and fit using library 'shinystan'
-waics     <- loo::compare(loos$loo_gaus, loos$loo_expp, loos$loo_ctrl1, loos$loo_ctrl2) %>%
-              as.data.frame %>%
-              tibble::add_column(model = gsub("loo_","",names(loos) ), .before = 1)
 
+# leave-one-out estimates
+loo_l      <- lapply(log_liks, loo) %>%
+                setNames(c("loo_gaus", "loo_expp", "loo_ctrl1",  "loo_ctrl2"))
+loo_df     <- loo::compare(loo_l$loo_gaus, loo_l$loo_expp, loo_l$loo_ctrl1, loo_l$loo_ctrl2) %>%
+                as.data.frame %>%
+                tibble::add_column(model = gsub("loo_","",names(loo_l) ), .before = 1)
+
+# WAIC estimates
+waic_l    <- lapply(log_liks, waic) %>%
+                setNames(c("waic_gaus", "waic_expp", "waic_ctrl1",  "waic_ctrl2"))
+waic_df   <- loo::compare(waic_l$waic_gaus, waic_l$waic_expp, waic_l$waic_ctrl1, waic_l$waic_ctrl2) %>%
+                as.data.frame %>%
+                tibble::add_column(model = gsub("waic_","",names(waic_l) ), .before = 1)
 
 # leave-one-out crossvalidation ---------------------------------------------------
 
@@ -331,7 +340,7 @@ pred_perform <- function(x, mod_data, type){
     res   <- (x - mod_data$lambdas$log_lambda)^2 %>% mean
   }
   if(type == "deviance"){
-    res   <-calc.deviance(x, mod_data$lambdas$log_lambda, 
+    res   <-calc.deviance(mod_data$lambdas$log_lambda, x, 
                           weights = rep(1, length(x) ),  
                           family="gaussian", calc.mean = TRUE)
   }
@@ -372,7 +381,7 @@ mof  <- merge(mse, devi)
 
 # store results ---------------------------------------------------------------------------
 mod_summs <- Reduce(function(...) merge(...), 
-                    list(mod_pars_diag, waics, mof) ) %>%
+                    list(mod_pars_diag, loo_df, waic_df, mof) ) %>%
                     arrange( mse )
 write.csv(mod_summs, paste0("C:/cloud/MEGA/Projects/sApropos/results/mod_summaries_",spp_name,".csv"), row.names = F)
 write.csv(posteriors, paste0("C:/cloud/MEGA/Projects/sApropos/results/posterior_",spp_name,".csv"), row.names = F)
