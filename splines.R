@@ -9,7 +9,7 @@ library(mgcv)
 # read data -----------------------------------------------------------------------------------------
 lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
 m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
+clim    <- read.csv("C:/cloud/MEGA/Projects/sApropos/airt_fc_demo.csv",  stringsAsFactors = F) #%>%
               #mutate( ppt = ppt / 30)
 spp     <- clim$species %>% unique
 
@@ -80,9 +80,11 @@ for(ii in 1:length(spp_list)){
     dati        <- dat[-i,]
     pred_null   <- mean( dat$log_lambda[-i] )
     
+    # model: leave-one-out
     mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod_full$sp),
                        method="GCV.Cp",gamma=1.4, data=dati) 
     
+    # prediction: leave-one-out
     pred_oo     <- predict(mod_loo, newdata = dat[i,], type="response")
     
     data.frame( pred_null = pred_null, 
@@ -103,7 +105,7 @@ for(ii in 1:length(spp_list)){
   
  
   # plot results ---------------------------------------------------------------
-  tiff(paste0("C:/cloud/MEGA/Projects/sApropos/results/splines/plots/",spp_name,".tiff"),
+  tiff(paste0("C:/cloud/MEGA/Projects/sApropos/results/splines/pet/",spp_name,".tiff"),
        unit="in", width=6.3, height=3.15, res=400, compression="lzw")
   
   par(mfrow=c(1,2), mar = c(3,3,1.7,0.1), mgp = c(1.8,0.7,0))
@@ -142,7 +144,7 @@ for(ii in 1:length(spp_list)){
     
   }
   
-  legend("topright", c("full model", "NULL", "crossval"),
+  legend("topright", c("Data", "NULL", "crossval"),
          col=c("black", "red", "blue"),
          lty = c(1, 1, 1), cex = 0.8, lwd = 2 , bty="n")
   
@@ -167,5 +169,5 @@ for(ii in 1:length(spp_list)){
 # summary figures
 mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l)
 write.csv(mod_sum_df, 
-          "C:/cloud/MEGA/Projects/sApropos/results/splines/spline_summaries.csv",
+          "C:/cloud/MEGA/Projects/sApropos/results/splines/spline_pet_summaries.csv",
           row.names=F)
