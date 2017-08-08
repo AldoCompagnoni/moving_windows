@@ -133,6 +133,43 @@ probl_spp <- bw_site_diff %>%
 subset(bw_site_diff, species %in% probl_spp )
 
 
+
+# correlation of monthly climates between sites
+site_clim_corr <- function(spp_name){
+  
+  #spp_name      <- spp_list[ii] # test run w/ spp number 1
+  m_back        <- 24     # months back
+  expp_beta     <- 20
+  
+  # lambda data
+  spp_lambdas   <- format_species(spp_name, lambdas)
+  
+  # climate daily data
+  clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+  
+  # get yearly sums
+  clim_sep_mean <- lapply(clim_separate, function(x)
+    group_by(x, species, year ) %>%
+      summarise( ppt = sum(ppt) ) %>%
+      ungroup
+  ) 
+  
+  # get correlation of climates across sites 
+  site_yr_clim_l    <- lapply(clim_sep_mean, function(x) x$ppt )
+  site_yr_clim_mat  <- do.call(cbind, site_yr_clim_l)
+  cor_mat           <- cor(site_yr_clim_mat) 
+
+  cor_mat[ upper.tri(cor_mat) ]
+  
+}
+
+# correlation of yearly climates
+clim_corr_l <- lapply(mpl_site_spp, site_clim_corr) %>%
+                    setNames(mpl_site_spp)
+
+
+
+
 # eucledian geographic distance
 euclid_dist <- function(ii){
   
