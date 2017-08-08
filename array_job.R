@@ -47,7 +47,7 @@ spp_lambdas   <- format_species(spp_name, lambdas)
 
 # climate data
 clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-clim_detrnded <- lapply(clim_separate, clim_detrend, "airt")
+clim_detrnded <- lapply(clim_separate, clim_detrend, "precip")
 clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
 
 # model data
@@ -75,7 +75,6 @@ sim_pars <- list(
   chains = 4
 )
 
-init_t = Sys.time() 
 # moving window, gaussian
 fit_gaus <- stan( 
   file = 'movwin_gaus.stan',
@@ -121,7 +120,6 @@ fit_ctrl2 <- stan(
   thin = sim_pars$thin,
   chains = sim_pars$chains
 )
-Sys.time() - init_t
 
 
 # parameter values and diagnostics ----------------------------------------------------------------
@@ -139,9 +137,9 @@ pars_diag_extract <- function(x){
   # central tendencies
   tmp         <- rstan::extract(x)
   par_means   <- sapply(tmp, function(x) mean(x)) %>%
-    setNames( paste0(names(tmp),"_mean") )
+                    setNames( paste0(names(tmp),"_mean") )
   par_medians <- sapply(tmp, function(x) median(x)) %>%
-    setNames( paste0(names(tmp),"_median") )
+                    setNames( paste0(names(tmp),"_median") )
   central_tend<- c(par_means, par_medians)
 
   # diagnostics
@@ -211,38 +209,43 @@ waic_df   <- loo::compare(waic_l$waic_gaus, waic_l$waic_expp, waic_l$waic_ctrl1,
 # crossvalidation function
 CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   
+  # identify years
+  uniq_yr           <- mod_data$lambdas$year %>% unique 
+  test_i            <- which(mod_data$lambdas$year == uniq_yr[i])
+  
   # put all in matrix form 
   x_clim            <- mod_data$climate
   x_clim_means      <- rowMeans(mod_data$climate)   # climate averages over entire window (for control model #2)
   
   # response variable
-  y_train           <- mod_data$lambdas$log_lambda[-i]
-  y_test            <- mod_data$lambdas$log_lambda[i]
+  y_train           <- mod_data$lambdas$log_lambda[-test_i]
+  y_test            <- mod_data$lambdas$log_lambda[test_i]
   
   # climate variable
-  clim_train        <- x_clim[-i,]
-  clim_test         <- x_clim[i,] %>% as.numeric
+  clim_train        <- x_clim[-test_i,]
+  clim_test         <- x_clim[test_i,] 
   
   # climate averages over full 24-month window (for control model #2)
-  clim_means_train  <- x_clim_means[-i]
-  clim_means_test   <- x_clim_means[i] 
+  clim_means_train  <- x_clim_means[-test_i]
+  clim_means_test   <- x_clim_means[test_i] 
   
   # organize data into list to pass to stan
   dat_stan_crossval <- list(
-    n_time = nrow(clim_train),  # number of years (length of response var)
-    n_lag = ncol(clim_train),   # maximum lag
-    y_train = y_train,
-    y_test = y_test,
-    clim_train = clim_train,
-    clim_test = clim_test,
-    clim_means_train = clim_means_train,           # climate averages over full 24-month window (for control model #2)
-    clim_means_test = clim_means_test,            # climate averages over full 24-month window (for control model #2)
+    n_train = length(y_train),  # number of data points in train set (length of response var)
+    n_test  = length(y_test),   # number of data points in test set
+    n_lag   = ncol(clim_train), # maximum lag
+    y_train = array(y_train),
+    y_test  = array(y_test),
+    clim_train = array(clim_train),
+    clim_test = array(clim_test),
+    clim_means_train = array(clim_means_train), # climate averages over full 24-month window (for control model #2)
+    clim_means_test = array(clim_means_test),   # climate averages over full 24-month window (for control model #2)
     expp_beta = expp_beta       # beta paramater for exponential power distribution
   )
   
   # fit moving window, gaussian
   fit_gaus_crossval <- stan( 
-    file = 'movwin_gaus_crossval.stan',
+    file = 'movwin_gaus_loyo.stan',
     data = dat_stan_crossval,
     pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik', 'pred_y'),
     warmup = sim_pars$warmup,
@@ -254,7 +257,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   
   # fit moving window, exponential power
   fit_expp_crossval <- stan( 
-    file = 'movwin_expp_crossval.stan',
+    file = 'movwin_expp_loyo.stan',
     data = dat_stan_crossval,
     pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik', 'pred_y'),
     warmup = sim_pars$warmup,
@@ -266,7 +269,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   
   # fit control 1 (intercept only)
   fit_ctrl1_crossval <- stan(
-    file = 'movwin_ctrl1_crossval.stan',
+    file = 'movwin_ctrl1_loyo.stan',
     data = dat_stan_crossval,
     pars = c('alpha', 'y_sd', 'log_lik', 'pred_y'),
     warmup = sim_pars$warmup,
@@ -277,7 +280,7 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   
   # fit control 2 (full window climate average)
   fit_ctrl2_crossval <- stan(
-    file = 'movwin_ctrl2_crossval.stan',
+    file = 'movwin_ctrl2_loyo.stan',
     data = dat_stan_crossval,
     pars = c('alpha', 'beta', 'y_sd', 'log_lik', 'pred_y'),
     warmup = sim_pars$warmup,
@@ -291,10 +294,10 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
                         expp = fit_expp_crossval, 
                         ctrl1 = fit_ctrl1_crossval, 
                         ctrl2 = fit_ctrl2_crossval
-  )
+                        )
   
   # predictions
-  mod_preds <- lapply(crossval_mods, function(x) rstan::extract(x, 'pred_y')$pred_y %>% mean )
+  mod_preds <- lapply(crossval_mods, function(x) rstan::extract(x, 'pred_y')$pred_y %>% apply(2,mean) )
   
   # diagnostics 
   diagnostics <- function(fit_obj, name_mod){
@@ -316,11 +319,18 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
   # store diagnostics
   gaus_expp   <- crossval_mods[1:2]
   diagnost_l  <- Map(diagnostics, gaus_expp, names(gaus_expp))
-  diagnost_df <- do.call(cbind, diagnost_l)        
+  diagnost_df <- do.call(cbind, diagnost_l) %>%
+                    bind_cols( unique( dplyr::select(mod_data$lambdas[test_i,],year) ) )
+  
+  # function
+  pred_df     <- mod_data$lambdas[test_i,] %>%
+                    mutate( gaus_pred  = mod_preds$gaus,
+                            expp_pred  = mod_preds$expp,
+                            cltr1_pred = mod_preds$ctrl1,
+                            cltr2_pred = mod_preds$ctrl2 )
   
   # df to return
-  out <- data.frame(mod_preds$gaus, mod_preds$expp, mod_preds$ctrl1, mod_preds$ctrl2) %>%
-            bind_cols(diagnost_df)
+  out         <- left_join(pred_df, diagnost_df)
   
   # remove stanfit objects (garbage collection)
   rm(fit_gaus_crossval)
@@ -333,7 +343,8 @@ CrossVal <- function(i, mod_data) {       # i is index for row to leave out
 }
 
 # spp-specific cross validation
-cxval_res   <- lapply(1:nrow(mod_data$lambdas), CrossVal, mod_data)
+year_inds   <- seq_along(unique(mod_data$lambdas$year))
+cxval_res   <- lapply( year_inds, CrossVal, mod_data)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
 
