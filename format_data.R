@@ -37,7 +37,7 @@ clim_list <- function(spp_name, clim, lam_spp){
 }
 
 # detrend population-level climate; put it in "long" form
-clim_detrend <- function(clim_x){ #, pops
+clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
 
   # format day one
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
@@ -53,18 +53,34 @@ clim_detrend <- function(clim_x){ #, pops
                 setNames( c("year", "month", "day", "species", "ppt") )
   
   # monthly climates
-  clim_m   <- clim_d %>%
+  # if climate var relate to precipitation, monthly SUMS 
+  if( clim_var == "precip" | clim_var == "pet"){
+    clim_m   <- clim_d %>%
                 group_by(year, month) %>%
                 summarise( ppt = sum(ppt, na.rm=T) )  %>%
-                spread(month, ppt) %>%
-                setNames( c("year",month.abb)) %>%            
+                spread( month, ppt ) %>%
+                setNames( c("year",month.abb) ) %>%            
                 as.data.frame() #%>%
                 #add_column(population = pops, .after = 1)
-           
+  }
+  #
+  if( clim_var == "airt"){
+    clim_m   <- clim_d %>%
+      group_by(year, month) %>%
+      summarise( ppt = mean(ppt, na.rm=T) )  %>%
+      spread( month, ppt ) %>%
+      setNames( c("year",month.abb) ) %>%            
+      as.data.frame()
+  }  
+  # throw error
+  if( !any( clim_var %in% c("precip","pet","airt")) ) {
+    stop( paste0(clim_var," is not a supported varible") ) 
+  }
+    
   # detrend climate
   d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                 as.data.frame() %>%
-                bind_cols(clim_m[,"year",drop=F]) %>%
+                bind_cols( clim_m[,"year",drop=F] ) %>%
                 dplyr::select( c("year", month.abb) )
 
   return(d_prec)
@@ -89,7 +105,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
                   arrange(year, month_num)
   
   # select temporal extent
-  clim_back <- function(yrz, m_obs, dat) {
+  clim_back <- function(yrz, m_obs, dat){
     id <- which(dat$year == yrz & dat$month_num == m_obs)
     r  <- c( id:(id - (m_back-1)) )
     return(dat[r,"clim_value"])
