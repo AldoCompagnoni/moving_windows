@@ -1,17 +1,20 @@
 #bjtwd<-"C:/Users/admin_bjt162/Dropbox/A.Current/Ongoing_Collab_Research/sApropos project/"
-setwd("C:/cloud/Dropbox/sAPROPOS project/")
+setwd("C:/cloud/MEGA/Projects/sApropos/")
 source("~/moving_windows/format_data.R")
 library(tidyverse)
 library(dismo)
 library(mgcv)
 
+# climate predictor, months back, max. number of knots
+clim_var  <- "pet" 
+m_back    <- 24    
+knots     <- 8
 
 # read data -----------------------------------------------------------------------------------------
-lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
-m_info  <- read.csv("DemogData/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
-              #mutate( ppt = ppt / 30)
-spp     <- clim$species %>% unique
+lam       <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) 
+m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim      <- read.csv(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
+spp       <- clim$species %>% unique
 
 
 # add monthg info to lambda information
@@ -27,28 +30,28 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 
 mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
-spp_list  <- spp_list[-c(2,3,4,8,9,16,21,22,24)] #,3,8,14,18,19,20)]
+spp_list  <- spp_list[ -c(2,3,4,8,9,16,21,22,24) ] #,3,8,14,18,19,20)]
 
 
-# perliminary format of species-level data ------------------------------------------------------
+# run models and store pictures ------------------------------------------------------
 for(ii in 1:length(spp_list)){
   
-  spp_name      <- spp_list[ii] # test run w/ spp number 1
-  m_back        <- 24     # months back
-  expp_beta     <- 20
-  
+  # set species
+  spp_name      <- spp_list[ii] 
   # lambda data
   spp_lambdas   <- format_species(spp_name, lambdas)
   
   # climate data
   clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-  clim_detrnded <- lapply(clim_separate, clim_detrend)
+  clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var)
   clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
   
   # model data
   mod_data          <- lambda_plus_clim(spp_lambdas, clim_mats)
   mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
   
+  # unique years, the basis of crossvalidation samples
+  unique_yr         <- arrange(mod_data$lambdas,year) %>% .$year %>% unique
   
   # format data for splines --------------------------------------------------------
   
@@ -71,28 +74,45 @@ for(ii in 1:length(spp_list)){
   # model fits -----------------------------------------------------------------------------------
   
   # fit full model
-  mod_full  <-gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs"),
-                  data=dat,method="GCV.Cp",gamma=1.4) 
+  if( length(unique(dat$population)) > 1 ){
+    mod_full  <-gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs"), # + population,
+                    data=dat,method="GCV.Cp",gamma=1.4)
+  } else{
+    mod_full  <-gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs"),
+                    data=dat,method="GCV.Cp",gamma=1.4)
+  } 
   
   # crossvalidation function
   crxval_spline <- function(i, dat, pmat){
     
-    dati        <- dat[-i,]
-    pred_null   <- mean( dat$log_lambda[-i] )
+    # select excluded year
+    yr          <- unique_yr[i]
+    
+    # train and test sets, null prediction
+    train_set   <- subset( dat, year != yr )
+    test_set    <- subset( dat, year == yr )
+    pred_null   <- mean( train_set$log_lambda )
     
     # model: leave-one-out
-    mod_loo     <- gam(log_lambda ~ s(lags, k=10, by=pmat, bs="cs",sp=mod_full$sp),
-                       method="GCV.Cp",gamma=1.4, data=dati) 
+    if( length(unique(dat$population)) > 1 ){
+      mod_loo     <- gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs",sp=mod_full$sp),# + population,
+                         method="GCV.Cp",gamma=1.4, data=train_set)
+    }else{
+      mod_loo     <- gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs",sp=mod_full$sp),
+                         method="GCV.Cp",gamma=1.4, data=train_set)
+    }
+    
     
     # prediction: leave-one-out
-    pred_oo     <- predict(mod_loo, newdata = dat[i,], type="response")
+    pred_oo     <- predict(mod_loo, newdata = test_set, type="response")
     
     data.frame( pred_null = pred_null, 
                 pred_oo   = pred_oo )
     
   }
+  
   # apply function across samples, and create data frame
-  crxval_l    <- lapply(1:nrow(dat), crxval_spline, dat, pmat)
+  crxval_l    <- lapply(1:length(unique_yr), crxval_spline, dat, pmat)
   crxval_df   <- Reduce(function(...) rbind(...), crxval_l)
   
   # Mean squared error
@@ -105,7 +125,7 @@ for(ii in 1:length(spp_list)){
   
  
   # plot results ---------------------------------------------------------------
-  tiff(paste0("C:/cloud/MEGA/Projects/sApropos/results/splines/pet/",spp_name,".tiff"),
+  tiff(paste0("results/splines/loyo/plots/",clim_var,m_back,"/",spp_name,".tiff"),
        unit="in", width=6.3, height=3.15, res=400, compression="lzw")
   
   par(mfrow=c(1,2), mar = c(3,3,1.7,0.1), mgp = c(1.8,0.7,0))
@@ -149,8 +169,8 @@ for(ii in 1:length(spp_list)){
          lty = c(1, 1, 1), cex = 0.8, lwd = 2 , bty="n")
   
   # legends deviance
-  dev.0=round(dev0,3)
-  dev.1=round(dev1,3)
+  dev.0=round(dev0,5)
+  dev.1=round(dev1,5)
   
   legend("bottomleft", 
          c(paste0("NULL mse: ",dev.0), paste0("Full. Mod. mse: ",dev.1)), 
@@ -169,5 +189,6 @@ for(ii in 1:length(spp_list)){
 # summary figures
 mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l)
 write.csv(mod_sum_df, 
-          "C:/cloud/MEGA/Projects/sApropos/results/splines/spline_pet_summaries.csv",
+          paste0("results/splines/loyo/summaries/spline_",
+                 clim_var,m_back,"_summaries.csv"),
           row.names=F)
