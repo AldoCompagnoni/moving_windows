@@ -6,11 +6,13 @@ library(tidyr)
 library(testthat)
 options(stringsAsFactors = F )
 
+crossval_type <- "loo"
+clim_var      <- "airt"
 
 # read lambda/clim data ---------------------------------------------------------------------------------
-lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
+lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv", stringsAsFactors = F)
 m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/precip_fc_demo.csv",  stringsAsFactors = F) 
+clim    <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/",clim_var,"_fc_demo.csv"), stringsAsFactors = F)
 
 
 # add monthg info to lambda information
@@ -46,7 +48,8 @@ categ     <- lambdas %>%
 
 
 # summary info ----------------------------------------------------------------------------
-res_folder<- "supercomp/res_7.26" 
+# res_folder<- "supercomp/res_7.26" 
+res_folder<- paste0("results/moving_windows/",crossval_type,"/summaries/",clim_var) 
 sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
 crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
 mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
@@ -58,7 +61,7 @@ replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>
                 unlist %>% t %>% t %>% as.data.frame %>% 
                 tibble::rownames_to_column(var = "species") %>%
                 rename( rep_n = V1)
-mod_splin <- read.csv("results/splines/spline_summaries.csv") %>%
+mod_splin <- read.csv("results/splines/spline_precip24_summaries.csv") %>%
                 dplyr::select(species,dev0,dev1) %>%
                 unique %>%
                 mutate( model_climate = 0 ) %>%
@@ -130,7 +133,7 @@ best_mod_by_categ <- function(best_mod = NULL, category){
 # summary plots ----------------------------------------------------------------------------------
 
 # best models
-tiff(paste0("results/plots/best_mods.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mods.tiff"),
      unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
 par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
@@ -145,7 +148,7 @@ dev.off()
 
 
 # prediction vs. replication
-tiff(paste0("results/plots/prediction_vs_rep.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/prediction_vs_rep.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
@@ -157,7 +160,7 @@ dev.off()
 
 
 # replication of best models
-tiff(paste0("results/plots/best_mod_replication.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_replication.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(3.5,3.5,1,0.5), mgp = c(2,0.7,0) ,
@@ -171,7 +174,7 @@ dev.off()
 
 
 # best model by ecoregion
-tiff(paste0("results/plots/best_mod_by_ecoregion.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_ecoregion.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -201,11 +204,11 @@ clim_obs_wrapper <- function(spp_name){
   clim_separate <- clim_list(spp_name, clim, spp_lambdas)
   
   # test
-  expect_true( length(spp_lambdas) == length(clim_separate) )
+  if( length(spp_lambdas) != length(clim_separate) ) stop ("elements in spp_lambdas is not == to elem. in clim_separate")
   
   # climate ranges
   clim_rng      <- Map(observed_clim_range, clim_separate, spp_lambdas, spp_name)
-  clim_rng
+  return(clim_rng)
   
 }
 # information on observed climatic ranges
@@ -220,7 +223,7 @@ clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
 # best model by observed climate range -----------------------------------------
 obs_clim_rng <- merge(mod_climate, clim_rng_m)
 
-tiff(paste0("results/plots/best_mod_by_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_climate_sampled.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -241,7 +244,7 @@ boxplot(prop_var_r ~ model_climate, data = obs_clim_rng,
 dev.off()
 
 
-tiff(paste0("results/plots/best_mod_by_mean_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_mean_climate_sampled.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -254,7 +257,7 @@ abline(h = 0, lty = 2)
 dev.off()
 
 
-tiff(paste0("results/plots/best_mod_MSE_by_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_MSE_by_climate_sampled.tiff"),
      unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
