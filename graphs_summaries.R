@@ -1,19 +1,20 @@
 # first try to automate graphs 
 setwd("C:/cloud/MEGA/projects/sAPROPOS/")
-source("~/moving_windows/format_data.R")
+#source("~/moving_windows/format_data.R")
 library(dplyr)
 library(tidyr)
 library(testthat)
 options(stringsAsFactors = F )
 
-crossval_type <- "loo"
+crossval_type <- "loyo"
 clim_var      <- "airt"
+m_back        <- 24
+
 
 # read lambda/clim data ---------------------------------------------------------------------------------
-lam     <- read.csv("C:/cloud/Dropbox/sAPROPOS project/DemogData/lambdas_6tr.csv", stringsAsFactors = F)
-m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv(paste0("C:/cloud/MEGA/Projects/sApropos/",clim_var,"_fc_demo.csv"), stringsAsFactors = F)
-
+lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
+m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim    <- data.table::fread(paste0(clim_var,"_fc_demo.csv"), stringsAsFactors = F)
 
 # add monthg info to lambda information
 month_add <- m_info %>%
@@ -36,6 +37,7 @@ by_spp_rep <- function(var){
     summarise(spp_n = n())
 
 }
+
 # replication of categories
 categ_rep <- lapply(c("OrganismType","Ecoregion","Order", "Class", "DicotMonoc", "Altitude"), 
                     by_spp_rep)
@@ -61,14 +63,14 @@ replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>
                 unlist %>% t %>% t %>% as.data.frame %>% 
                 tibble::rownames_to_column(var = "species") %>%
                 rename( rep_n = V1)
-mod_splin <- read.csv("results/splines/spline_precip24_summaries.csv") %>%
+mod_splin <- read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
                 dplyr::select(species,dev0,dev1) %>%
                 unique %>%
                 mutate( model_climate = 0 ) %>%
                 mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
                 setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
-  
-  
+
+
 # best model by measure of fit (MOF)
 best_mod_by_mof <- function(mof){
   
@@ -78,8 +80,8 @@ best_mod_by_mof <- function(mof){
     table
   
 }
-best_mods <- lapply(c("mse","looic"), best_mod_by_mof) %>%
-                setNames(c("mse","looic"))
+best_mods <- lapply(c("mse","waic"), best_mod_by_mof) %>%
+                setNames(c("mse","waic"))
               
 # predictive accuracy by measure of fit
 pred_acc_by_mof <- function(mof){
@@ -95,16 +97,32 @@ pred_acc_by_mof <- function(mof){
 }
 pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "looic") )
 
+# replication in years
+rep_yr <- function(spp_name){
+  
+  spp_df    <- subset(lambdas, SpeciesAuthor == spp_name)
+  spp_yr    <- spp_df$MatrixEndYear %>% unique %>% length
+  
+  data.frame( species = spp_name,
+              rep_yr  = spp_yr)
+  
+}
+spp_rep_yr_l  <- lapply(unique(mod_climate$species), rep_yr) 
+spp_rep_yr    <- Reduce(function(...) rbind(...), spp_rep_yr_l)
+
+
 # set up categories for summary graphs
 mod_climate <- Reduce(function(...) merge(...), pred_acc_l) %>%
                   rename( rep_n = rep_n_mse) %>%
+                  left_join( spp_rep_yr ) %>%
                   inner_join( categ ) %>%
                   mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
-                  mutate( model_climate = sub("ctrl2|expp", "1", model_climate)) %>%
+                  mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
                   mutate( model_climate = as.numeric(model_climate)) %>%
                   mutate( Ecoregion = as.factor(Ecoregion)) %>%
                   mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
                   mutate( Class = as.factor(Class))
+
 
 # calculate number of categories for each "best model"
 best_mod_by_categ <- function(best_mod = NULL, category){
@@ -133,48 +151,51 @@ best_mod_by_categ <- function(best_mod = NULL, category){
 # summary plots ----------------------------------------------------------------------------------
 
 # best models
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mods.tiff"),
-     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mods(",clim_var,").tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
-best_mods$mse   <- setNames(best_mods$mse, c("NULL", "24mon.", "expp"))
-best_mods$looic <- setNames(best_mods$looic, "Gaussian")
+names_best_mod  <- gsub("crtl1","NULL", names(best_mods$mse) )
+names_best_mod  <- gsub("crtl2","24mon.", names_best_mod )
+
+best_mods$mse   <- setNames(best_mods$mse, names_best_mod )
+#best_mods$waic <- setNames(best_mods$waic, c("gaus") )
 barplot(best_mods$mse, ylab = "Best model based on MSE", cex.names = 1.2)
-barplot(best_mods$looic, ylab = "Best model based on LOOIC", cex.names = 1.2)
+#barplot(best_mods$waic, ylab = "Best model based on WAIC", cex.names = 1.2)
 
 dev.off()
 
 
 # prediction vs. replication
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/prediction_vs_rep.tiff"),
-     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/prediction_vs_rep(",clim_var,").tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
-par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 plot(mse ~ rep_n, pch = 16, data = mod_climate, 
-     xlab = "Number of replicates", ylab = "Mean squared error")
+     xlab = "Number of reps (year-by-site comb.)", ylab = "Mean squared error")
+plot(mse ~ rep_yr, pch = 16, data = mod_climate, 
+     xlab = "Number of years", ylab = "Mean squared error")
 
 dev.off()
 
 
 # replication of best models
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_replication.tiff"),
-     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_replication(",clim_var,").tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
-par(mfrow=c(2,2), mar = c(3.5,3.5,1,0.5), mgp = c(2,0.7,0) ,
+par(mfrow=c(1,2), mar = c(3.5,3.5,1,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
-
-hist(mod_climate$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "All data sets")
-hist(subset(mod_climate, model_climate == 0)$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "No climate")
-hist(subset(mod_climate, model_climate == 1)$rep_n, ylim = c(0,8), xlim = c(0,70), xlab = "replication", main = "Climate")
+boxplot(rep_n ~ model_climate, data=mod_climate, names=c("NULL","climate"), ylab = "N. of reps (site-by-year)" )
+boxplot(rep_yr ~ model_climate, data=mod_climate, names=c("NULL","climate"), ylab = "N. of years sampled" )
 
 dev.off()
 
 
 # best model by ecoregion
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_ecoregion.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_ecoregion(",clim_var,").tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -182,6 +203,57 @@ barplot( best_mod_by_categ(NULL,"Ecoregion"), main = "Representation across spec
          ylim = c(0,14), col = "grey")
 barplot( best_mod_by_categ(1,"Ecoregion"), main = "Climate", ylim = c(0,14), col = "grey")
 barplot( best_mod_by_categ(0,"Ecoregion"), main = "NULL", ylim = c(0,14), col = "grey")
+
+dev.off()
+
+
+# graphs best spline models with/without climate ------------------------------------------------------
+read_spline_summ <- function(clim_var, m_back){
+  return(
+    read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,m_back,"_summaries.csv") ) %>%
+      dplyr::select(species,dev0,dev1) %>%
+      unique %>%
+      mutate( model_climate = 0 ) %>%
+      mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
+      setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") ) %>%
+      as.data.frame()
+  )
+  
+}
+
+# plots
+tiff(paste0("results/splines/loyo/best_spline_models.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,3), mar = c(2,3.5,1.5,0.2), mgp = c(2,0.7,0) )
+
+m_back <- 12
+clim_var <- "precip"
+barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
+         names = c("NULL", clim_var),
+         main = paste0(clim_var,", ",m_back," months") )
+clim_var <- "pet"
+barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
+         names = c("NULL", "climate"),
+         main = paste0(clim_var,", ",m_back," months") )
+clim_var <- "airt"
+barplot( table(read_spline_summ("airt",m_back)$model_climate_spline),
+         names = c("NULL", "climate"),
+         main = paste0(clim_var,", ",m_back," months") )
+
+m_back <- 24
+clim_var <- "precip"
+barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
+         names = c("NULL", clim_var),
+         main = paste0(clim_var,", ",m_back," months") )
+clim_var <- "pet"
+barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
+         names = c("NULL", "climate"),
+         main = paste0(clim_var,", ",m_back," months") )
+clim_var <- "airt"
+barplot( table(read_spline_summ("airt",m_back)$model_climate_spline),
+         names = c("NULL", "climate"),
+         main = paste0(clim_var,", ",m_back," months") )
 
 dev.off()
 
@@ -204,7 +276,7 @@ clim_obs_wrapper <- function(spp_name){
   clim_separate <- clim_list(spp_name, clim, spp_lambdas)
   
   # test
-  if( length(spp_lambdas) != length(clim_separate) ) stop ("elements in spp_lambdas is not == to elem. in clim_separate")
+  expect_equal(length(spp_lambdas), length(clim_separate) )
   
   # climate ranges
   clim_rng      <- Map(observed_clim_range, clim_separate, spp_lambdas, spp_name)
@@ -223,7 +295,7 @@ clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
 # best model by observed climate range -----------------------------------------
 obs_clim_rng <- merge(mod_climate, clim_rng_m)
 
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_climate_sampled(",clim_var,").tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -244,7 +316,7 @@ boxplot(prop_var_r ~ model_climate, data = obs_clim_rng,
 dev.off()
 
 
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_mean_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_mean_climate_sampled(",clim_var,").tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -257,7 +329,7 @@ abline(h = 0, lty = 2)
 dev.off()
 
 
-tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_MSE_by_climate_sampled.tiff"),
+tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_MSE_by_climate_sampled(",clim_var,").tiff"),
      unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -273,6 +345,7 @@ dev.off()
 # Models on climate/no -------------------------------------------------------------
 model_climate_mods <- list(
   model_climate ~ rep_n,
+  model_climate ~ rep_yr,
   model_climate ~ prop_rang,
   model_climate ~ prop_yrs,
   model_climate ~ prop_var,
@@ -286,7 +359,7 @@ model_climate_mods <- list(
 
 # fit models
 models <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", data = obs_clim_rng)) %>%
-                    setNames(c("sample_size", "prop_rang", "prop_yrs",
+                    setNames(c("sample_size", "sampled_years", "prop_rang", "prop_yrs",
                                "mod_prop_var", "mod_prop_var_r", "mod_prop_mean","mod_mean_clim",
                                "ecoregion", "dicot_mono","class"))
 
@@ -300,6 +373,3 @@ compare_df <- merge(obs_clim_rng, mod_splin) %>%
 
 mod <- glm(model_climate_spline ~ model_climate, family= "binomial", data = compare_df)
 summary(mod)
-
-   
-
