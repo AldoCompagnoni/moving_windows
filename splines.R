@@ -4,9 +4,10 @@ source("~/moving_windows/format_data.R")
 library(tidyverse)
 library(dismo)
 library(mgcv)
+library(testhtat)
 
 # climate predictor, months back, max. number of knots
-clim_var  <- "pet" 
+clim_var  <- "pet"
 m_back    <- 24    
 knots     <- 8
 
@@ -32,7 +33,6 @@ mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
 spp_list  <- spp_list[ -c(2,3,4,8,9,16,21,22,24) ] #,3,8,14,18,19,20)]
 
-
 # run models and store pictures ------------------------------------------------------
 for(ii in 1:length(spp_list)){
   
@@ -49,6 +49,9 @@ for(ii in 1:length(spp_list)){
   # model data
   mod_data          <- lambda_plus_clim(spp_lambdas, clim_mats)
   mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
+  
+  # tests
+  expect_equal(length(spp_lambdas), length(clim_separate) )
   
   # unique years, the basis of crossvalidation samples
   unique_yr         <- arrange(mod_data$lambdas,year) %>% .$year %>% unique
