@@ -183,7 +183,7 @@ read_spline_summ <- function(clim_var, m_back){
       mutate( clim_var = clim_var )
   )
 }
-spline_summ_l   <- lapply( c("airt","pet","precip"), read_spline_summ, 24)
+spline_summ_l   <- lapply( c("airt","pet","precip"), read_spline_summ, 12)
 spline_summ_tmp <- Reduce( function(...) rbind(...), spline_summ_l ) %>%
                       merge( data.frame( clim_var = c("precip", "pet", "airt"),
                                          color    = c("blue", "orange", "red") ) ) %>%
@@ -258,7 +258,6 @@ dev.off()
 
 # color code for all (hopefully!) barplots
 col_barplot <- c("red","red","orange","orange","blue","blue")
-
 
 # Best models by replication
 tiff(paste0("results/moving_windows/",crossval_type,"/plots/best_mod_replication.tiff"),
@@ -443,30 +442,47 @@ dev.off()
 
 # Models on climate/no -------------------------------------------------------------
 model_climate_mods <- list(
-  model_climate ~ rep_n,
-  model_climate ~ rep_yr,
-  model_climate ~ prop_rang,
-  model_climate ~ prop_yrs,
-  model_climate ~ prop_var,
-  model_climate ~ prop_var_r,
-  model_climate ~ mean_dev,
-  model_climate ~ mean_clim,
-  model_climate ~ Ecoregion,
-  model_climate ~ DicotMonoc,
-  model_climate ~ Class
+  model_climate ~ rep_n + clim_var,
+  model_climate ~ rep_yr + clim_var,
+  model_climate ~ prop_rang + clim_var,
+  model_climate ~ prop_yrs + clim_var,
+  model_climate ~ prop_var + clim_var,
+  model_climate ~ prop_var_r + clim_var,
+  model_climate ~ mean_dev + clim_var,
+  model_climate ~ mean_clim + clim_var,
+  model_climate ~ Ecoregion + clim_var,
+  model_climate ~ DicotMonoc + clim_var,
+  model_climate ~ Class + clim_var
 )
 
 # fit models
-models <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", data = obs_clim_rng)) %>%
+mw_mods   <- lapply(model_climate_mods, function(x) glm(x, family = "binomial", data = mw_summ_df)) %>%
                     setNames(c("sample_size", "sampled_years", "prop_rang", "prop_yrs",
                                "mod_prop_var", "mod_prop_var_r", "mod_prop_mean","mod_mean_clim",
                                "ecoregion", "dicot_mono","class"))
 
 # summarise model results
-res_summary_mod <- lapply(models, summary)
+res_summary_mod <- lapply(mw_mods, summary)
 
+
+subset(mw_summ_df, model_mse != "ctrl1")$species %>% unique
+
+# only interesting "significant" relationship
+glm(model_climate ~ mean_dev, family = "binomial", 
+    data = subset(mw_summ_df, clim_var == "pet") ) %>% summary
+
+
+# spline models -----------------------------------------------------------------------
+# fit models
+sp_mods <- lapply(model_climate_mods[1:8], function(x) glm(x, family = "binomial", data = spline_summ_df)) %>%
+              setNames(c("sample_size", "sampled_years", "prop_rang", "prop_yrs",
+                         "mod_prop_var", "mod_prop_var_r", "mod_prop_mean","mod_mean_clim"))
+
+
+lapply(sp_mods, summary)
 
 # compare with splines --------------------------------------------------
+
 compare_df <- merge(obs_clim_rng, mod_splin) %>%
                 dplyr::select(species, model_climate, model_climate_spline)
 
