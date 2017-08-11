@@ -32,10 +32,10 @@ post_means <- function(x){
   spp_name  <- gsub(".csv","",spp_n)
   
   # extract climate variable name
-  # everything after "/posterior_"
-  clim_v    <- gsub("/posterior_?.*","",x)
-  # everything before "summaries/"
-  clim_var  <- gsub("^(.*?)summaries/","",clim_v)
+  # substitute 
+  # 1 everything after "/posterior_"
+  # 2 everything before "summaries/"
+  clim_var  <- gsub("^(.*?)summaries/|/posterior_?.*","",x)
   
   posterior <- data.table::fread( paste0(x) ) %>%
                   group_by( model ) %>%
