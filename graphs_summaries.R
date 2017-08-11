@@ -7,7 +7,6 @@ library(testthat)
 options(stringsAsFactors = F )
 
 crossval_type <- "loyo"
-clim_var      <- "airt"
 m_back        <- 24
 
 
@@ -165,34 +164,41 @@ mw_summ_l   <- lapply(c("precip", "pet", "airt"), summ_by_clim )
 # Also: color code the data frame 
 mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
                   merge( data.frame( clim_var = c("precip", "pet", "airt"),
-                                     color    = c("blue", "orange", "red") ) )
+                                     color    = c("blue", "orange", "red") ) ) %>%
+                  mutate(method = "mov_win")
 
 
-# summary plots ----------------------------------------------------------------------------------
-
-# calculate number of categories for each "best model"
-best_mod_by_categ <- function(best_mod = NULL, category){
-  
-  if( is.null(best_mod) ){
-    tmp <- mod_climate %>%
-      group_by_( category ) %>%
-      summarise( rep = n() ) %>%
-      as.data.frame %>% t
-  } else{
-    tmp <- mod_climate %>%
-      subset( model_climate == best_mod ) %>%
-      group_by_( category ) %>%
-      summarise( rep = n() ) %>%
-      as.data.frame %>% t
-  }
-  df <- matrix(tmp[2,], nrow=1, ncol=length(tmp[2,]), byrow=T) %>%
-    as.data.frame %>%
-    setNames( tmp[1,] ) %>% 
-    as.matrix()
-  return(df)
-  
+# add splines to the mix
+read_spline_summ <- function(clim_var, m_back){
+  return(
+    read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,m_back,"_summaries.csv") ) %>%
+      dplyr::select(species,dev0,dev1,dev2) %>%
+      unique %>%
+      setNames( c("species", "dev_NULL", "dev_lm",  "dev_spline") ) %>%
+      mutate( model_climate = 0 ) %>%
+      mutate( model_climate = replace( model_climate, which(dev_NULL > dev_lm | dev_NULL > dev_spline ), 1) ) %>%
+      mutate( model_mse = "NULL") %>%
+      mutate( model_mse = replace( model_mse, which(model_climate == 1 ), "spline") ) %>%
+      mutate( model_mse = replace( model_mse, which(model_mse ==  "spline" & dev_spline > dev_lm ), "24mon") ) %>%
+      mutate( clim_var = clim_var )
+  )
 }
+spline_summ_l   <- lapply( c("airt","pet","precip"), read_spline_summ, 24)
+spline_summ_tmp <- Reduce( function(...) rbind(...), spline_summ_l ) %>%
+                      merge( data.frame( clim_var = c("precip", "pet", "airt"),
+                                         color    = c("blue", "orange", "red") ) ) %>%
+                      mutate( method = "spline") %>%
+                      rowwise %>%
+                      mutate(mse = min(dev_NULL,dev_lm,dev_spline) )
+                      
+# add information on replication, and climate sampled
+rep_clim_info   <- dplyr::select(mw_summ_df, species, clim_var, rep_n, rep_yr,
+                                 prop_rang, prop_yrs,prop_var,prop_var_r, mean_dev, mean_clim ) %>%
+                      unique
+spline_summ_df  <- left_join( spline_summ_tmp, rep_clim_info )
 
+
+# summary MOVING WINDOWS plots ----------------------------------------------------------------------------------
 
 # best models
 tiff(paste0("results/moving_windows/",crossval_type,"/plots/best_mods.tiff"),
@@ -202,9 +208,9 @@ par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
 best_mod_l  <- lapply( split(mw_summ_df$model_mse, as.factor(mw_summ_df$clim_var) ),
-                       function(x) table(x) ) 
+                       function(x) table(x) )
 best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
-colnames(best_mod_df) <- c("Air temp.","PET","Precipitation")        
+colnames(best_mod_df) <- c("Air temp.","PET","Precipitation")
 barplot(best_mod_df, beside=T, col = c("black", "grey40", "grey", "white"))
 legend("topright", c("NULL", "24 Mon", "Expp", "Gaus"),
        fill = c("black", "grey40", "grey", "white"),
@@ -233,7 +239,8 @@ dev.off()
 tiff(paste0("results/moving_windows/",crossval_type,"/plots/best_mod_MSE_by_climate_sampled.tiff"),
      unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
+par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1,
+    cex.axis=1)
 
 plot(mse ~ prop_rang,xlab = "Proportion of climate values observed",
      ylab = "Best model MSE", pch = 16, data = mw_summ_df, 
@@ -247,16 +254,17 @@ plot(mse ~ prop_yrs, xlab = "Proportion of extreme years observed",
 dev.off()
 
 
-# barplots ----------------------------------------------------------------
+# barplots 
 
 # color code for all (hopefully!) barplots
 col_barplot <- c("red","red","orange","orange","blue","blue")
+
 
 # Best models by replication
 tiff(paste0("results/moving_windows/",crossval_type,"/plots/best_mod_replication.tiff"),
      unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
-par(mfrow=c(1,2), mar = c(2.5,3,0.1,0.5), mgp = c(1.7,0.6,0),
+par(mfrow=c(1,2), mar = c(2,2.5,0.1,0.5), mgp = c(1.5,0.6,0), oma =c(0,0,0,5),
     cex.axis=0.5, cex.lab = 1)
 boxplot(rep_n ~ model_climate + clim_var, data=mw_summ_df, 
         ylab = "N. of reps (site-by-year)", names.cex=0.5,
@@ -264,17 +272,17 @@ boxplot(rep_n ~ model_climate + clim_var, data=mw_summ_df,
 boxplot(rep_yr ~ model_climate + clim_var, data=mw_summ_df, 
         ylab = "N. of years sampled",
         names= rep(c("NULL","Clim."),3), col = col_barplot )
-legend("topright", c("Air temp.", "PET", "precip"),
+legend(6.5,36, c("Air temp.", "PET", "precip"), xpd=NA,
        fill = unique(col_barplot), bty = "n")
 
 dev.off()
-
 
 # best models by climate sampled
 tiff(paste0("results/moving_windows/",crossval_type,"/plots/best_mod_by_climate_sampled.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
+par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.5,0), 
+    cex.lab = 1.2, cex.axis = 0.7)
 
 boxplot(prop_rang ~ model_climate + clim_var, data = mw_summ_df,
         names = rep(c("NULL", "Climate"), 3), ylab = "Proportion of climate observed",
@@ -302,7 +310,7 @@ par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 boxplot(mean_dev ~ model_climate + clim_var, data = mw_summ_df,
         names = rep(c("NULL","Climate"),3), col = col_barplot,
-        ylab = "St. Dev. of mean sampled climate from mean hist. climate" )
+        ylab = "St. Dev. [mean sampled climate - mean hist. climate]" )
 abline(h = 0, lty = 2)
 legend("topleft", c("Air temperature", "Potential evapotranspiration", "precipitation"),
        fill = unique(col_barplot), bty = "n")
@@ -310,69 +318,124 @@ legend("topleft", c("Air temperature", "Potential evapotranspiration", "precipit
 dev.off()
 
 
+# summary SPLINE plots ----------------------------------------------------------------------------------
 
-# # best model by ecoregion
-# tiff(paste0("results/moving_windows/",crossval_type,"/plots/",clim_var,"/best_mod_by_ecoregion(",clim_var,").tiff"),
-#      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
-# 
-# par(mfrow=c(2,2), mar = c(3,3.5,1.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
-# barplot( best_mod_by_categ(NULL,"Ecoregion"), main = "Representation across species", 
-#          ylim = c(0,14), col = "grey")
-# barplot( best_mod_by_categ(1,"Ecoregion"), main = "Climate", ylim = c(0,14), col = "grey")
-# barplot( best_mod_by_categ(0,"Ecoregion"), main = "NULL", ylim = c(0,14), col = "grey")
-# 
-# dev.off()
-
-
-# graphs best spline models with/without climate ------------------------------------------------------
-read_spline_summ <- function(clim_var, m_back){
-  return(
-    read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,m_back,"_summaries.csv") ) %>%
-      dplyr::select(species,dev0,dev1) %>%
-      unique %>%
-      mutate( model_climate = 0 ) %>%
-      mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
-      setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") ) %>%
-      as.data.frame()
-  )
-  
-}
-
-# plots
-tiff(paste0("results/splines/loyo/best_spline_models.tiff"),
+# best models
+tiff(paste0("results/splines/",crossval_type,"/plots/best_mods.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(2,3), mar = c(2,3.5,1.5,0.2), mgp = c(2,0.7,0) )
+par(mfrow=c(1,1), mar = c(2.5,2.5,0.5,0.5), mgp = c(1.5,0.7,0) ,
+    cex.lab = 1.2)
 
-m_back <- 12
-clim_var <- "precip"
-barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
-         names = c("NULL", clim_var),
-         main = paste0(clim_var,", ",m_back," months") )
-clim_var <- "pet"
-barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
-         names = c("NULL", "climate"),
-         main = paste0(clim_var,", ",m_back," months") )
-clim_var <- "airt"
-barplot( table(read_spline_summ("airt",m_back)$model_climate_spline),
-         names = c("NULL", "climate"),
-         main = paste0(clim_var,", ",m_back," months") )
-
-m_back <- 24
-clim_var <- "precip"
-barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
-         names = c("NULL", clim_var),
-         main = paste0(clim_var,", ",m_back," months") )
-clim_var <- "pet"
-barplot( table(read_spline_summ(clim_var,m_back)$model_climate_spline),
-         names = c("NULL", "climate"),
-         main = paste0(clim_var,", ",m_back," months") )
-clim_var <- "airt"
-barplot( table(read_spline_summ("airt",m_back)$model_climate_spline),
-         names = c("NULL", "climate"),
-         main = paste0(clim_var,", ",m_back," months") )
+best_mod_l  <- lapply( split(spline_summ_df$model_mse, as.factor(spline_summ_df$clim_var) ),
+                       function(x) table(x) )
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
+colnames(best_mod_df) <- c("Air temp.","PET","Precipitation")
+best_mod_df <- best_mod_df[c(2,1,3),]
+barplot(best_mod_df, beside=T, col = c("black", "grey50", "grey"))
+legend("topleft", c("NULL", "24 Mon", "spline"),
+       fill = c("black", "grey50", "grey"),
+       bty = "n")
 
 dev.off()
+
+
+# MSE by absolute and year replication
+tiff(paste0("results/splines/",crossval_type,"/plots/prediction_vs_rep.tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
+
+par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
+plot(jitter(mse,3) ~ jitter(rep_n,3), pch = 16, data = spline_summ_df, col = spline_summ_df$color,
+     xlab = "Number of reps (year-by-site comb.)", ylab = "Mean squared error")
+plot(jitter(mse,3) ~ jitter(rep_yr,3), pch = 16, data = spline_summ_df, col = spline_summ_df$color,
+     xlab = "Number of years", ylab = "Mean squared error")
+legend("topleft", c("Air temp.", "PET", "precip"), pch = 16,
+       col = unique(spline_summ_df$color), bty = "n")
+
+dev.off()
+
+
+# MSE by climate sampled
+tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_MSE_by_climate_sampled.tiff"),
+     unit="in", width=3.6, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1,
+    cex.axis=1)
+
+plot(mse ~ prop_rang,xlab = "Proportion of climate values observed",
+     ylab = "Best model MSE", pch = 16, data = spline_summ_df, 
+     col = spline_summ_df$color)
+legend("topleft", c("Air temperature", "Potential evapotranspiration", "Precipitation"), pch = 16,
+       col = unique(spline_summ_df$color), bty = "n")
+plot(mse ~ prop_yrs, xlab = "Proportion of extreme years observed",
+     ylab = "Best model MSE", pch = 16, data = spline_summ_df, 
+     col = spline_summ_df$color)
+
+dev.off()
+
+
+# barplots 
+
+# Best models by replication
+tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_replication.tiff"),
+     unit="in", width=6.3, height=3.15, res=600,compression="lzw")
+
+par(mfrow=c(1,2), mar = c(2,2.5,0.1,0.5), mgp = c(1.5,0.6,0), oma =c(0,0,0,5),
+    cex.axis=0.5, cex.lab = 1)
+boxplot(rep_n ~ model_climate + clim_var, data=spline_summ_df, 
+        ylab = "N. of reps (site-by-year)", names.cex=0.5,
+        names= rep(c("NULL","Clim."),3), col = col_barplot )
+boxplot(rep_yr ~ model_climate + clim_var, data=spline_summ_df, 
+        ylab = "N. of years sampled",
+        names= rep(c("NULL","Clim."),3), col = col_barplot )
+legend(6.5,36, c("Air temp.", "PET", "precip"), xpd=NA,
+       fill = unique(col_barplot), bty = "n")
+
+dev.off()
+
+
+# best models by climate sampled
+tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_by_climate_sampled.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.5,0), 
+    cex.lab = 1.2, cex.axis = 0.7)
+
+boxplot(prop_rang ~ model_climate + clim_var, data = spline_summ_df,
+        names = rep(c("NULL", "Climate"), 3), ylab = "Proportion of climate observed",
+        ylab = "Proportion", col = col_barplot)
+boxplot(prop_yrs ~ model_climate + clim_var, data = spline_summ_df,
+        names = rep(c("NULL", "Climate"), 3), ylab = "Proportion of extreme years",
+        ylab = "Proportion", col = col_barplot)
+legend("bottomright", c("Air temp.", "PET", "precip"),
+       fill = unique(col_barplot), bty = "n")
+boxplot(prop_var ~ model_climate + clim_var, data = spline_summ_df,
+        names = rep(c("NULL", "Climate"), 3), ylab = "Prop. of climate var. obs. (mean)",
+        ylab = "Proportion", col = col_barplot)
+boxplot(prop_var_r ~ model_climate + clim_var, data = spline_summ_df,
+        names = rep(c("NULL", "Climate"), 3), ylab = "Prop. of climate var. obs. (median)",
+        ylab = "Proportion", col = col_barplot)
+
+dev.off()
+
+
+# best model by "mean climate sampled" (mean climate with respect to 50 year mean)
+tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_by_mean_climate_sampled.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
+
+boxplot(mean_dev ~ model_climate + clim_var, data = spline_summ_df,
+        names = rep(c("NULL","Climate"),3), col = col_barplot,
+        ylab = "St. Dev. [mean sampled climate - mean hist. climate]" )
+abline(h = 0, lty = 2)
+legend("topleft", c("Air temperature", "Potential evapotranspiration", "precipitation"),
+       fill = unique(col_barplot), bty = "n")
+
+dev.off()
+
+
 
 
 
