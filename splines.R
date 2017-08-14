@@ -1,22 +1,24 @@
 #bjtwd<-"C:/Users/admin_bjt162/Dropbox/A.Current/Ongoing_Collab_Research/sApropos project/"
+rm(list=ls())
 setwd("C:/cloud/MEGA/Projects/sApropos/")
-source("~/moving_windows/format_data.R")
+source("C:/CODE/moving_windows/format_data.R")
 library(tidyverse)
 library(dismo)
 library(mgcv)
 library(testthat)
 
 # climate predictor, months back, max. number of knots
-rm(list=ls())
-source("C:/CODE/moving_windows/format_data.R")
-clim_var  <- "precip"
-m_back    <- 12    
-knots     <- 8
+clim_var  <- "airt"
+m_back    <- 24    
+knots     <- 3
+
 
 # read data -----------------------------------------------------------------------------------------
 lam       <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) 
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim      <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
+clim_fc   <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
+clim_35   <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
+clim      <- list(clim_fc, clim_35)
 spp       <- clim$species %>% unique
 
 
@@ -31,9 +33,11 @@ lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$Sp
 lambdas   <- bind_rows(lam_min, lam_add) %>%
                 subset( !is.na(MatrixEndMonth) )
 
+
 mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
 spp_list  <- spp_list[ -c(2,3,4,8,9,16,21,22,24) ] #,3,8,14,18,19,20)]
+
 
 # run models and store pictures ------------------------------------------------------
 for(ii in 1:length(spp_list)){
@@ -62,10 +66,10 @@ for(ii in 1:length(spp_list)){
   
   # precipitation matrix
   pmat      <- mod_data$climate %>% setNames(NULL) %>% as.matrix
-  pmean     <- apply(pmat, 1, mean)
+  pmean     <- apply(pmat, 1, mean, na.rm = T)
   
   # set up lags
-  lags      <- matrix(0, nrow(mod_data$climate), ncol(mod_data$climate)) 
+  lags      <- matrix(0, nrow(mod_data$climate), ncol(mod_data$climate))
   for(i in 1:ncol(lags)) lags[,i]=i
   lagsm     <- as.matrix(lags)
   
@@ -82,11 +86,11 @@ for(ii in 1:length(spp_list)){
   # fit full model
   if( length(unique(dat$population)) > 1 ){
     mod_full  <-gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs"), # + population,
-                    data=dat,method="GCV.Cp",gamma=1.4)
-  } else{
+                    data=dat,method="GCV.Cp",gamma=1.4, na.action = na.omit)
+  }else{
     mod_full  <-gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs"),
-                    data=dat,method="GCV.Cp",gamma=1.4)
-  } 
+                    data=dat,method="GCV.Cp",gamma=1.4, na.action = na.omit)
+  }
   
   # crossvalidation function
   crxval_spline <- function(i, dat, pmat){
@@ -101,11 +105,11 @@ for(ii in 1:length(spp_list)){
     # model: leave-one-year-out
     if( length(unique(dat$population)) > 1 ){
       mod_spline  <- gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs",sp=mod_full$sp),# + population,
-                         method="GCV.Cp",gamma=1.4, data=train_set)
+                         method="GCV.Cp",gamma=1.4, na.action = na.omit, data=train_set)
       mod_lm      <- lm(log_lambda ~ pmean, data=train_set)# + population
     }else{
       mod_spline  <- gam(log_lambda ~ s(lags, k=knots, by=pmat, bs="cs",sp=mod_full$sp),
-                         method="GCV.Cp",gamma=1.4, data=train_set)
+                         method="GCV.Cp",gamma=1.4, na.action = na.omit, data=train_set)
       mod_lm      <- lm(log_lambda ~ pmean, data=train_set)
     }
     
@@ -122,14 +126,15 @@ for(ii in 1:length(spp_list)){
                               )
     design_pred <- dplyr::select(test_set, year, population)
     
-    bind_cols(design_pred, pred_df) 
+    bind_cols(design_pred, pred_df)
     
   }
   
   # apply function across samples, and create data frame
   crxval_l    <- lapply(1:length(unique_yr), crxval_spline, dat, pmat)
   crxval_df   <- Reduce(function(...) rbind(...), crxval_l) %>%
-                    left_join( dplyr::select(dat,year, population,log_lambda) )
+                    left_join( dplyr::select(dat,year, population,log_lambda) ) # %>%
+                    # subset( !is.na(pred_spline) )
   
   # Mean squared error
   dev0        <- calc.deviance(crxval_df$log_lambda, crxval_df$pred_null, 
