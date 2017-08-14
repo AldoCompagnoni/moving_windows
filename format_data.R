@@ -1,5 +1,12 @@
 # Formatting functions for climate and lambda data-------------------------------------
 
+# species from Dalgleish et al. 2010 (fetchClimate data not useful in this case)
+Dalgleish_spp <- c("Cirsium_undulatum", "Echinacea_angustifolia", 
+                   "Hedyotis_nigricans","Lesquerella_ovalifolia", 
+                   "Paronychia_jamesii", "Psoralea_tenuiflora",      
+                   "Ratibida_columnifera", "Solidago_mollis", 
+                   "Sphaeralcea_coccinea", "Thelesperma_megapotamicum")
+
 # format species 
 format_species <- function(spp_name, lam){
   
@@ -22,16 +29,32 @@ format_species <- function(spp_name, lam){
 # separate climate variables by population 
 clim_list <- function(spp_name, clim, lam_spp){
   
-  # select species-specific climate
-  clim_spp  <- clim %>% 
-                  subset(species == spp_name) %>%
-                  mutate( population = as.factor(population) )
+  # if species belongs to Dalgleish et al. 2010
+  if( spp_name %in% Dalgleish_spp){
     
-  # list of climate
-  clim_l    <- clim_spp %>%
-                  dplyr::select(-population) %>%
-                  split( clim_spp$population )
+    yr_seq    <- c( (max(lam_spp[[1]]$year)-49):max(lam_spp[[1]]$year) )
+    clim_l    <- clim[[2]] %>%
+                    setNames( c("year",month.abb) ) %>%
+                    subset( year %in% yr_seq ) %>%
+                    list
+    clim_l    <- setNames(clim_l, "Hays")
+    
+  }else{
+  
+    # select species-specific climate
+    # climate NOT BEFORE 1948 (FetchClimate goes back to 1948)
+    clim_spp  <- clim[[1]] %>% 
+                    subset( species == spp_name) %>%
+                    mutate( population = as.factor(population) ) %>%
+                    subset( year > 1947 )
+     
+    # climate variables list
+    clim_l    <- clim_spp %>%
+                    dplyr::select(-population) %>%
+                    split( clim_spp$population )
 
+  }
+  
   return(clim_l)
   
 }
@@ -39,44 +62,53 @@ clim_list <- function(spp_name, clim, lam_spp){
 # detrend population-level climate; put it in "long" form
 clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
 
-  # format day one
-  day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
-                        format="%d/%m/%Y") 
-
-  # climate data
-  clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
-                as.character %>%
-                as.data.frame(stringsAsFactors=F) %>%
-                separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
-                bind_cols(clim_x) %>%
-                dplyr::select(-year,-day) %>%
-                setNames( c("year", "month", "day", "species", "ppt") )
-  
-  # monthly climates
-  # if climate var relate to precipitation, monthly SUMS 
-  if( clim_var == "precip" | clim_var == "pet"){
-    clim_m   <- clim_d %>%
-                group_by(year, month) %>%
-                summarise( ppt = sum(ppt, na.rm=T) )  %>%
-                spread( month, ppt ) %>%
-                setNames( c("year",month.abb) ) %>%            
-                as.data.frame() #%>%
-                #add_column(population = pops, .after = 1)
-  }
-  #
-  if( clim_var == "airt"){
-    clim_m   <- clim_d %>%
-      group_by(year, month) %>%
-      summarise( ppt = mean(ppt, na.rm=T) )  %>%
-      spread( month, ppt ) %>%
-      setNames( c("year",month.abb) ) %>%            
-      as.data.frame()
-  }  
-  # throw error
-  if( !any( clim_var %in% c("precip","pet","airt")) ) {
-    stop( paste0(clim_var," is not a supported varible") ) 
-  }
+  # if climate is for species in Dalgleish et al. 2010
+  if( ncol(clim_x) == 13 ){
     
+    clim_m <- clim_x
+    
+  }else{
+    
+    # format day one
+    day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
+                          format="%d/%m/%Y" ) 
+  
+    # climate data
+    clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
+                    as.character %>%
+                    as.data.frame(stringsAsFactors=F) %>%
+                    separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
+                    bind_cols(clim_x) %>%
+                    dplyr::select(-year,-day) %>%
+                    setNames( c("year", "month", "day", "species", "ppt") )
+      
+    # monthly climates
+    # if climate var relate to precipitation, monthly SUMS 
+    if( clim_var == "precip" | clim_var == "pet"){
+      clim_m   <- clim_d %>%
+                    group_by(year, month) %>%
+                    summarise( ppt = sum(ppt, na.rm=T) )  %>%
+                    spread( month, ppt ) %>%
+                    setNames( c("year",month.abb) ) %>%            
+                    as.data.frame() #%>%
+                    #add_column(population = pops, .after = 1)
+    }
+    #
+    if( clim_var == "airt"){
+      clim_m   <- clim_d %>%
+        group_by(year, month) %>%
+        summarise( ppt = mean(ppt, na.rm=T) )  %>%
+        spread( month, ppt ) %>%
+        setNames( c("year",month.abb) ) %>%            
+        as.data.frame()
+    }  
+    # throw error
+    if( !any( clim_var %in% c("precip","pet","airt")) ) {
+      stop( paste0(clim_var," is not a supported varible") ) 
+    }
+    
+  }
+  
   # detrend climate
   d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                 as.data.frame() %>%
@@ -151,9 +183,12 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
     
   }
     
+  # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
   clim_lam    <- arrange(clim_lam, year, population)  %>%
-                  # erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
-                  subset( lambda != 0 )
+                  subset( lambda != 0 ) 
+  # erase any row containing NAs (for Dalgleish et al. 2010 data)
+  r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
+  if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
   lam_out     <- dplyr::select(clim_lam, year:log_lambda)
   clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
   out         <- list(lambdas = lam_out, climate = clim_out)
