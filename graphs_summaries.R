@@ -16,7 +16,9 @@ summ_by_clim <- function(clim_var){
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
   m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-  clim    <- data.table::fread(paste0(clim_var,"_fc_demo.csv"), stringsAsFactors = F)
+  clim_fc   <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
+  clim_35   <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
+  clim      <- list(clim_fc, clim_35)
   
   # add monthg info to lambda information
   month_add <- m_info %>%
@@ -63,7 +65,7 @@ summ_by_clim <- function(clim_var){
                   unlist %>% t %>% t %>% as.data.frame %>% 
                   tibble::rownames_to_column(var = "species") %>%
                   rename( rep_n = V1)
-  mod_splin <- read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
+  mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
                   dplyr::select(species,dev0,dev1) %>%
                   unique %>%
                   mutate( model_climate = 0 ) %>%
@@ -137,7 +139,7 @@ summ_by_clim <- function(clim_var){
     spp_lambdas   <- format_species(spp_name, lambdas)
     
     # climate data
-    clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+    clim_separate <- clim_list(spp_name, clim, clim_var, spp_lambdas)
     
     # test
     expect_equal(length(spp_lambdas), length(clim_separate) )
@@ -171,7 +173,7 @@ mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
 # add splines to the mix
 read_spline_summ <- function(clim_var, m_back){
   return(
-    read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,m_back,"_summaries.csv") ) %>%
+    read.csv( paste0("results/splines/summaries/spline_",clim_var,m_back,"_summaries.csv") ) %>%
       dplyr::select(species,dev0,dev1,dev2) %>%
       unique %>%
       setNames( c("species", "dev_NULL", "dev_lm",  "dev_spline") ) %>%
@@ -320,7 +322,7 @@ dev.off()
 # summary SPLINE plots ----------------------------------------------------------------------------------
 
 # best models
-tiff(paste0("results/splines/",crossval_type,"/plots/best_mods.tiff"),
+tiff(paste0("results/splines/plots/best_mods.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(2.5,2.5,0.5,0.5), mgp = c(1.5,0.7,0) ,
@@ -340,7 +342,7 @@ dev.off()
 
 
 # MSE by absolute and year replication
-tiff(paste0("results/splines/",crossval_type,"/plots/prediction_vs_rep.tiff"),
+tiff(paste0("results/splines/plots/prediction_vs_rep.tiff"),
      unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
 par(mfrow=c(1,2), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
@@ -356,7 +358,7 @@ dev.off()
 
 
 # MSE by climate sampled
-tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_MSE_by_climate_sampled.tiff"),
+tiff(paste0("results/splines/plots/best_mod_MSE_by_climate_sampled.tiff"),
      unit="in", width=3.6, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(3.5,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1,
@@ -377,7 +379,7 @@ dev.off()
 # barplots 
 
 # Best models by replication
-tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_replication.tiff"),
+tiff(paste0("results/splines/plots/best_mod_replication.tiff"),
      unit="in", width=6.3, height=3.15, res=600,compression="lzw")
 
 par(mfrow=c(1,2), mar = c(2,2.5,0.1,0.5), mgp = c(1.5,0.6,0), oma =c(0,0,0,5),
@@ -395,7 +397,7 @@ dev.off()
 
 
 # best models by climate sampled
-tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_by_climate_sampled.tiff"),
+tiff(paste0("results/splines/plots/best_mod_by_climate_sampled.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,2), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.5,0), 
@@ -420,7 +422,7 @@ dev.off()
 
 
 # best model by "mean climate sampled" (mean climate with respect to 50 year mean)
-tiff(paste0("results/splines/",crossval_type,"/plots/best_mod_by_mean_climate_sampled.tiff"),
+tiff(paste0("results/splines/plots/best_mod_by_mean_climate_sampled.tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(2,3.5,0.5,0.2), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -433,10 +435,6 @@ legend("topleft", c("Air temperature", "Potential evapotranspiration", "precipit
        fill = unique(col_barplot), bty = "n")
 
 dev.off()
-
-
-
-
 
 
 
