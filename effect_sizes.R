@@ -21,7 +21,7 @@ path_create <- function(x,y){
 
 # paths of files containing posteriors
 post_paths_l  <- Map(path_create, raw_file_vec, wds)
-post_paths    <- Reduce(function(...) c(...), post_paths) %>% as.list
+post_paths    <- Reduce(function(...) c(...), post_paths_l) %>% as.list
 
 
 # calculate posterior means -------------------------------------------------------------------------
@@ -57,7 +57,9 @@ summ_by_clim <- function(clim_var){
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
   m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-  clim    <- data.table::fread(paste0(clim_var,"_fc_demo.csv"), stringsAsFactors = F)
+  clim_fc <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
+  clim_35 <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
+  clim    <- list(clim_fc, clim_35)
   
   # add monthg info to lambda information
   month_add <- m_info %>%
@@ -92,7 +94,7 @@ summ_by_clim <- function(clim_var){
                   unique
   
   # summary info ----------------------------------------------------------------------------
-  res_folder<- paste0("results/moving_windows/",crossval_type,"/summaries/",clim_var) 
+  res_folder<- paste0("results/moving_windows/loyo/summaries/",clim_var) 
   sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
   crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
   mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
@@ -104,7 +106,7 @@ summ_by_clim <- function(clim_var){
                   unlist %>% t %>% t %>% as.data.frame %>% 
                   tibble::rownames_to_column(var = "species") %>%
                   rename( rep_n = V1)
-  mod_splin <- read.csv( paste0("results/splines/loyo/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
+  mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
                   dplyr::select(species,dev0,dev1) %>%
                   unique %>%
                   mutate( model_climate = 0 ) %>%
@@ -178,7 +180,7 @@ summ_by_clim <- function(clim_var){
     spp_lambdas   <- format_species(spp_name, lambdas)
     
     # climate data
-    clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+    clim_separate <- clim_list(spp_name, clim, clim_var, spp_lambdas)
     
     # test
     expect_equal(length(spp_lambdas), length(clim_separate) )
@@ -206,7 +208,7 @@ mw_summ_l   <- lapply(c("precip", "pet", "airt"), summ_by_clim )
 mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
                   merge( data.frame( clim_var = c("precip", "pet", "airt"),
                                      color    = c("blue", "orange", "red") ) ) %>%
-                  mutate(method = "mov_win") 
+                  mutate(method = "mov_win")
                   
 
 # effect sizes ----------------------------------------------------------------------------------
@@ -220,30 +222,52 @@ eff_size_df <- mw_summ_df %>%
 # plots -----------------------------------------------------------------------------------------
 
 # climate variable and best model
-par(mfrow=c(2,1))
-boxplot(beta ~ clim_var, data = eff_size_df) ; abline(h=0,lty=2)
-boxplot(beta ~ model, data = eff_size_df) ; abline(h=0,lty=2)
+tiff(paste0("results/moving_windows/loyo/plots/es/es_by_model_climVar.tiff"),
+     unit="in", width=3.15, height=6.3, res=400, compression="lzw")
+
+par(mfrow=c(2,1), mar = c(2.5,3,0.1,0.1) , mgp=c(1.8,0.7,0))
+boxplot(beta ~ clim_var, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+boxplot(beta ~ model, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+
+dev.off()
 
 # Categories
-par(mfrow=c(2,2))
-boxplot(beta ~ Ecoregion, data = eff_size_df) ; abline(h=0,lty=2)
-boxplot(beta ~ DicotMonoc, data = eff_size_df) ; abline(h=0,lty=2)
-boxplot(beta ~ Class, data = eff_size_df) ; abline(h=0,lty=2)
+tiff(paste0("results/moving_windows/loyo/plots/es/es_by_category.tiff"),
+     unit="in", width=6.3, height=6.3, res=400, compression="lzw")
+
+par(mfrow=c(2,2), mar = c(2.5,3,0.1,0.1) , mgp=c(1.8,0.7,0))
+boxplot(beta ~ Ecoregion, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+boxplot(beta ~ DicotMonoc, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+boxplot(beta ~ Class, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+
+dev.off()
 
 # replication
-par(mfrow=c(2,2), mar = c(3,3,0.1,0.1))
-plot(beta ~ mse, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ rep_n, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ rep_yr, pch = 16, col = color, data = eff_size_df)
+tiff(paste0("results/moving_windows/loyo/plots/es/es_by_replication.tiff"),
+     unit="in", width=6.3, height=6.3, res=400, compression="lzw")
+
+par(mfrow=c(2,2), mar = c(2.5,3,0.1,0.1) , mgp=c(1.8,0.7,0))
+plot(beta ~ mse, pch = 16,ylab="beta", col = color, data = eff_size_df)
+plot(beta ~ rep_n, pch = 16, ylab="beta",col = color, data = eff_size_df)
+plot(beta ~ rep_yr, pch = 16, ylab="beta",col = color, data = eff_size_df)
+dev.off()
 
 # proportion of climate sampled
-par(mfrow=c(2,2), mar = c(3,3,0.1,0.1))
-plot(beta ~ prop_rang, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ prop_yrs, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ prop_var, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ prop_var_r, pch = 16, col = color, data = eff_size_df)
+tiff(paste0("results/moving_windows/loyo/plots/es/es_by_climateSampled.tiff"),
+     unit="in", width=6.3, height=6.3, res=400, compression="lzw")
+
+par(mfrow=c(2,2), mar = c(2.5,3,0.1,0.1), mgp=c(1.8,0.7,0))
+plot(beta ~ prop_rang, pch = 16, ylab="beta",col = color, data = eff_size_df)
+plot(beta ~ prop_yrs, pch = 16, ylab="beta",col = color, data = eff_size_df)
+plot(beta ~ prop_var, pch = 16, ylab="beta",col = color, data = eff_size_df)
+plot(beta ~ prop_var_r, pch = 16, ylab="beta",col = color, data = eff_size_df)
+dev.off()
 
 # mean climate sampled
-par(mfrow=c(2,1), mar = c(3,3,0.1,0.1))
-plot(beta ~ mean_dev, pch = 16, col = color, data = eff_size_df)
-plot(beta ~ mean_clim, pch = 16, col = color, data = eff_size_df)
+tiff(paste0("results/moving_windows/loyo/plots/es/es_by_meanClimate.tiff"),
+     unit="in", width=3.15, height=6.3, res=400, compression="lzw")
+
+par(mfrow=c(2,1), mar = c(3,3,0.1,0.1), mgp=c(1.8,0.7,0))
+plot(beta ~ mean_dev, pch = 16, ylab="beta", col = color, data = eff_size_df)
+plot(beta ~ mean_clim, pch = 16,ylab="beta", col = color, data = eff_size_df)
+dev.off()
