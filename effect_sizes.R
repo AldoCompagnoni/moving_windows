@@ -271,3 +271,59 @@ par(mfrow=c(2,1), mar = c(3,3,0.1,0.1), mgp=c(1.8,0.7,0))
 plot(beta ~ mean_dev, pch = 16, ylab="beta", col = color, data = eff_size_df)
 plot(beta ~ mean_clim, pch = 16,ylab="beta", col = color, data = eff_size_df)
 dev.off()
+
+
+
+
+
+# isolate only temperature and precipitation -------------------------------------------------
+t_prec    <- subset(eff_size_df, clim_var != "pet") %>%
+                dplyr::select(clim_var, species, beta) %>%
+                spread(clim_var,beta) %>% 
+                t 
+beta      <- t_prec[-1,] %>% as.data.frame %>% setNames( t_prec[1,] )
+beta[]    <- lapply(beta[], function(x) x %<>% as.numeric(x) )
+# scale mses
+beta      <- tibble::add_column(beta, x = c(1,2), .before = 1 )
+
+
+# Color code - Dalgleish_spp vs. other species --------------------------------------------
+categoty  <- dplyr::select(mw_summ_df, species, Ecoregion, DicotMonoc, Class) %>% 
+                unique %>%
+                right_join( data.frame(species = names(beta[,-1])) )
+colors    <- rep("black", (ncol(beta)-1) )
+col_dalgl <- replace( colors, names(beta[,-1]) %in% Dalgleish_spp, "red" )
+
+
+par( mfrow = c(2,2), mar=c(2,3,1.5,0.1), mgp = c(2,0.7,0) )
+matplot(beta$x, beta[,-1], type = "l", main = "Dalgleish spp.",
+        ylab = "Beta", xlab = "",
+        col = col_dalgl, lty = 1, lwd = 1.5,
+        xaxt="n", xlim = c(0.9, 2.1))
+axis(1, at=c(1,2), labels=c("Mean temp.", "Precip.")) 
+legend("topright", legend = c("Other","Dalgleish"),
+       lty = 1, col = c("black","red"), bty = "n")
+
+matplot(beta$x, beta[,-1], type = "l",  main = "Ecoregion",
+        ylab = "Beta", xlab = "",
+        col = categoty$Ecoregion, lty = 1, lwd = 1.5,
+        xaxt="n", xlim = c(0.9, 2.1))
+axis(1, at=c(1,2), labels=c("Mean temp.", "Precip.")) 
+legend("topright", legend = unique(categoty$Ecoregion),
+       lty = 1, col = 1:length(unique(categoty$Ecoregion)), bty = "n")
+
+matplot(beta$x, beta[,-1], type = "l", main = "Dicot/Monocot",
+        ylab = "Beta", xlab = "",
+        col = categoty$DicotMonoc, lty = 1, lwd = 1.5,
+        xaxt="n", xlim = c(0.9, 2.1))
+axis(1, at=c(1,2), labels=c("Mean temp.", "Precip.")) 
+legend("topright", legend = unique(categoty$DicotMonoc),
+       lty = 1, col = 1:length(unique(categoty$DicotMonoc)), bty = "n")
+
+matplot(beta$x, beta[,-1], type = "l", main = "Class",
+        ylab = "Beta", xlab = "",
+        col = categoty$Class, lty = 1, lwd = 1.5,
+        xaxt="n", xlim = c(0.9, 2.1))
+axis(1, at=c(1,2), labels=c("Mean temp.", "Precip.")) 
+legend("topright", legend = unique(categoty$Class),
+       lty = 1, col =1:length(unique(categoty$Class)), bty = "n")
