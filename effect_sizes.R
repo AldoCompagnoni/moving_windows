@@ -51,6 +51,33 @@ means_l   <- lapply(post_paths, post_means)
 means_df  <- Reduce(function(...) bind_rows(...), means_l)
 
 
+# calculate posterior CI
+post_ci <- function(x){
+  
+  # extract species name
+  spp_n     <- gsub("results/moving_windows/loyo/summaries/[a-z]{3,6}/posterior_","",x)
+  spp_name  <- gsub(".csv","",spp_n)
+  
+  # extract climate variable name
+  # substitute 
+  # 1 everything after "/posterior_"
+  # 2 everything before "summaries/"
+  clim_var  <- gsub("^(.*?)summaries/|/posterior_?.*","",x)
+  
+  posterior <- data.table::fread( paste0(x) ) %>%
+                  dplyr::select( -grep("log_lik_",names(.)) ) %>%
+                  subset( model %in% c("gaus","expp") ) %>%
+                  mutate( species = spp_name,
+                          clim_var = clim_var )
+  
+  return(posterior)
+  
+}
+ci_l      <- lapply(post_paths, post_ci)
+ci_df     <- Reduce(function(...) bind_rows(...), ci_l)
+
+
+
 # summarize moving windows results by climate variable
 summ_by_clim <- function(clim_var){
   
@@ -327,3 +354,160 @@ matplot(beta$x, beta[,-1], type = "l", main = "Class",
 axis(1, at=c(1,2), labels=c("Mean temp.", "Precip.")) 
 legend("topright", legend = unique(categoty$Class),
        lty = 1, col =1:length(unique(categoty$Class)), bty = "n")
+
+
+
+
+# Credible Intervals of location and shape ----------------------------------------------------------------
+
+# upper and lower Credible Intervals
+ci_05     <- ci_df %>%
+                group_by( model, species, clim_var ) %>%
+                summarise_all( quantile_05 ) %>%
+                setNames( c("model", "species", "clim_var",
+                            paste0( c("sens_mu", "sens_sd", "alpha", "beta", "y_sd", "lp__"),"95") ) )
+ci_95     <- ci_df %>%
+                group_by( model, species, clim_var ) %>%
+                summarise_all( quantile_95 ) %>%
+                setNames( c("model", "species", "clim_var",
+                            paste0( c("sens_mu", "sens_sd", "alpha", "beta", "y_sd", "lp__"),"05") ) )
+up_lo_ci  <- full_join(ci_05,ci_95) 
+
+
+
+# draw bargraph and colors
+bars_and_ci <- function(variable, climate_var, models){
+  
+  # set 'base' colors
+  main_col  <- data.frame( clim_var = c("airt","pet","precip"),
+                           col      = c("red","orange","blue") ) %>%
+                  subset( clim_var == climate_var ) %>% .$col
+  
+  # set up data frame of colors
+  col_df    <- mw_summ_df %>% 
+                  dplyr::select(species, clim_var, model_mse) %>%
+                  arrange(clim_var, species) %>%
+                  subset( clim_var == climate_var ) %>%
+                  mutate( col = main_col ) %>%
+                  mutate( col = replace(col, model_mse == models,  paste0(main_col,"4") ) )
+  
+  if( variable == "sens_mu"){
+    ylim_vec=c(0,24)
+  # if measureing
+  }else{
+    if(models == "gaus"){
+      ylim_vec=c(0,45)
+    }else{
+      ylim_vec=c(0,12)
+    }
+  }
+    
+  # plot interquartile range
+  boxplot( formula( paste0(variable," ~ species") ), names = NA, ylab = "", 
+          outline = F, ylim = ylim_vec, whisklty = 0, staplelty = 0, xaxt='n', 
+          col = col_df$col, 
+          data = subset(ci_df, model == models & clim_var == climate_var))
+  
+  # upper and lower credible intervals
+  up_lo_df  <- up_lo_ci %>%
+                  subset(model == models & clim_var == climate_var) %>%
+                  .[,c("species",paste0(variable,c("05","95")))] %>%
+                  as.data.frame
+  # species list
+  spp_ci    <- up_lo_df$species %>% unique
+  
+  # plot upper and lower CI - by species
+  plot_ci   <- function(ii){  
+  
+    segOff  <- 0.5
+    # upper ci
+    segments(x0=ii-segOff,y0 = up_lo_df[ii,2], x1=ii+segOff, y1= up_lo_df[ii,2], lty=1, lwd=1.5, col="black")
+    # lower ci
+    segments(x0=ii-segOff,y0 = up_lo_df[ii,3], x1=ii+segOff, y1= up_lo_df[ii,3], lty=1, lwd=1.5, col="black")
+    # green vertical line
+    segments(x0=ii,y0 = up_lo_df[ii,3], x1=ii, y1=up_lo_df[ii,2], lty=3, lwd=1, col="black")
+      
+  }
+  lapply(1:length(spp_ci), plot_ci)
+    
+}
+
+
+# "center of sensitivity" for both 
+tiff("results/moving_windows/loyo/plots/es/central_tendency_ci.tiff",unit="in",
+     width=6.3,height=4.2,res=600,compression="lzw")
+
+par(mfrow = c(2,3), mar = c(2,2,0.1,0.1), mgp = c(2,0.7,0), oma = c(0,1,0,0) )
+# gaussian models
+bars_and_ci("sens_mu", "airt","gaus")
+bars_and_ci("sens_mu", "pet","gaus")
+bars_and_ci("sens_mu", "precip","gaus")
+
+# power exponential
+bars_and_ci("sens_mu", "airt","expp")
+bars_and_ci("sens_mu", "pet","expp")
+bars_and_ci("sens_mu", "precip","expp")
+
+# x-axis
+mtext("Species", side = 1, line = 0.7, at = -24)
+
+# y-axes
+mtext("Gaussian: mean (month)",              line = 32.9, at = 42, cex = 0.8, side = 2)
+mtext("Power exponential: location (month)", line = 32.9, at = 11, cex = 0.8, side = 2)
+
+# plot data
+mtext("Air Temperature", side = 1, line = -15.3, at = -67)
+mtext("PET",             side = 1, line = -15.3, at = -26)
+mtext("Precipitation",   side = 1, line = -15.3, at = 18)
+
+dev.off()
+
+
+# standard deviation; scale
+tiff("results/moving_windows/loyo/plots/es/dispersion_ci.tiff",unit="in",
+     width=6.3,height=4.2,res=600,compression="lzw")
+
+par(mfrow = c(2,3), mar = c(2,2,0.1,0.1), mgp = c(2,0.7,0), oma = c(0,2,0,0) )
+
+# gaussian models
+bars_and_ci("sens_sd", "airt","gaus")
+bars_and_ci("sens_sd", "pet","gaus")
+bars_and_ci("sens_sd", "precip","gaus")
+
+# power exponential
+bars_and_ci("sens_sd", "airt","expp")
+bars_and_ci("sens_sd", "pet","expp")
+bars_and_ci("sens_sd", "precip","expp")
+
+# x-axis
+mtext("Species", side = 1, line = 0.7, at = -24)
+
+# y-axes
+mtext("Power exponential: location (month)",line = 32.5, at = 11, cex = 0.8, side = 2 )
+mtext("Gaussian: location (month)",         line = 33.2, at = 42, cex = 0.8, side = 2 )
+
+# plot data
+mtext("Air Temperature", side = 1, line = -15.3, at = -67)
+mtext("PET",             side = 1, line = -15.3, at = -26)
+mtext("Precipitation",   side = 1, line = -15.3, at = 18)
+
+dev.off()
+
+
+# standard deviation; scale
+tiff("results/moving_windows/loyo/plots/es/legend.tiff",unit="in",
+     width=6.3,height=6.3,res=600,compression="lzw")
+
+par(mfrow = c(1,1), mar = c(2,2,0.1,0.1), mgp = c(2,0.7,0), oma = c(0,2,0,0) )
+plot(c(1:10), type="n", xaxt = "n", yaxt = "n", bty='n')
+legend(0.2,10,
+       c("Air temperature - not best model",
+         "Air temperature - BEST model!",
+         "PET - not best model",
+         "PET - BEST model!",
+         "Precipitation - not best model",
+         "Precipitation - BEST model!"),
+       fill = c("red","red4","orange","orange4","blue","blue4"),
+       bty="n", cex = 2)
+
+dev.off()
