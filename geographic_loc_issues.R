@@ -244,7 +244,6 @@ clim_m_corr_l <- lapply(mpl_site_spp, site_mon_clim_corr) %>%
 
 
 
-
 # eucledian geographic distance --------------------------------------------------------------
 euclid_dist <- function(ii){
   
