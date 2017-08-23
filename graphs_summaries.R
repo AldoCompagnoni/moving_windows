@@ -16,10 +16,8 @@ summ_by_clim <- function(clim_var){
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
   m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-  clim_fc   <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
-  clim_35   <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
-  clim      <- list(clim_fc, clim_35)
-  
+  clim    <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
+   
   # add monthg info to lambda information
   month_add <- m_info %>%
                   mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
@@ -139,7 +137,7 @@ summ_by_clim <- function(clim_var){
     spp_lambdas   <- format_species(spp_name, lambdas)
     
     # climate data
-    clim_separate <- clim_list(spp_name, clim, clim_var, spp_lambdas)
+    clim_separate <- clim_list(spp_name, clim, spp_lambdas)
     
     # test
     expect_equal(length(spp_lambdas), length(clim_separate) )
@@ -185,10 +183,10 @@ read_spline_summ <- function(clim_var, m_back){
       mutate( clim_var = clim_var )
   )
 }
-spline_summ_l   <- lapply( c("airt","pet","precip"), read_spline_summ, 12)
+spline_summ_l   <- lapply( c("airt","airt_gdd_","pet","precip"), read_spline_summ, 12)
 spline_summ_tmp <- Reduce( function(...) rbind(...), spline_summ_l ) %>%
-                      merge( data.frame( clim_var = c("precip", "pet", "airt"),
-                                         color    = c("blue", "orange", "red") ) ) %>%
+                      merge( data.frame( clim_var = c("precip", "pet", "airt",  "airt_gdd_"),
+                                         color    = c("blue", "orange", "red", "green") ) ) %>%
                       mutate( method = "spline") %>%
                       rowwise %>%
                       mutate(mse = min(dev_NULL,dev_lm,dev_spline) )
@@ -196,7 +194,7 @@ spline_summ_tmp <- Reduce( function(...) rbind(...), spline_summ_l ) %>%
 # add information on replication, and climate sampled
 rep_clim_info   <- dplyr::select(mw_summ_df, species, clim_var, rep_n, rep_yr,
                                  prop_rang, prop_yrs,prop_var,prop_var_r, mean_dev, mean_clim ) %>%
-                      unique
+                                 unique
 spline_summ_df  <- left_join( spline_summ_tmp, rep_clim_info )
 
 
@@ -390,7 +388,7 @@ par(mfrow=c(1,1), mar = c(2.5,2.5,0.5,0.5), mgp = c(1.5,0.7,0) ,
 best_mod_l  <- lapply( split(spline_summ_df$model_mse, as.factor(spline_summ_df$clim_var) ),
                        function(x) table(x) )
 best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
-colnames(best_mod_df) <- c("Air temp.","PET","Precipitation")
+colnames(best_mod_df) <- c("Air temp.","GDD","PET","Precipitation")
 best_mod_df <- best_mod_df[c(2,1,3),]
 barplot(best_mod_df, beside=T, col = c("black", "grey50", "grey"))
 legend("topleft", c("NULL", "24 Mon", "spline"),
@@ -410,7 +408,7 @@ plot(jitter(mse,3) ~ jitter(rep_n,3), pch = 16, data = spline_summ_df, col = spl
      xlab = "Number of reps (year-by-site comb.)", ylab = "Mean squared error")
 plot(jitter(mse,3) ~ jitter(rep_yr,3), pch = 16, data = spline_summ_df, col = spline_summ_df$color,
      xlab = "Number of years", ylab = "Mean squared error")
-legend("topleft", c("Air temp.", "PET", "precip"), pch = 16,
+legend("topleft", c("Air temp.", "GDD", "PET", "precip"), pch = 16,
        col = unique(spline_summ_df$color), bty = "n")
 
 dev.off()
