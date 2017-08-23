@@ -199,39 +199,27 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
 
 # observed cliamtic range
 observed_clim_range <- function(clim_x, lambda_d, spp_name){
+
+  # format day one
+  day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
+                        format="%d/%m/%Y") 
   
-  # if climate is for species in Dalgleish et al. 2010
-  if( ncol(clim_x) == 13 ){
-    
-    clim_m <- clim_x %>%
-                setNames( c("year", paste0(c(1:12))) ) %>%
-                gather(month,ppt,-year) %>%
-                mutate( month = as.numeric(month) ) %>%
-                arrange(year,month)
-    
-  }else{
-    
-    # format day one
-    day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
-                          format="%d/%m/%Y") 
-    
-    # climate data
-    clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
-                    as.character %>%
-                    as.data.frame(stringsAsFactors=F) %>%
-                    separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
-                    bind_cols(clim_x) %>%
-                    dplyr::select(-year,-day) %>%
-                    setNames( c("year", "month", "day", "species", "ppt") )
-    
-    # monthly climates
-    clim_m   <- clim_d %>%
-                    group_by(year, month) %>%
-                    summarise( ppt = sum(ppt, na.rm=T) ) %>%
-                    ungroup %>%
-                    mutate( month = as.numeric(month) ) %>%
-                    mutate( year = as.numeric(year) ) 
-  }
+  # climate data
+  clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
+                  as.character %>%
+                  as.data.frame(stringsAsFactors=F) %>%
+                  separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
+                  bind_cols(clim_x) %>%
+                  dplyr::select(-year,-day) %>%
+                  setNames( c("year", "month", "day", "species", "ppt") )
+  
+  # monthly climates
+  clim_m   <- clim_d %>%
+                  group_by(year, month) %>%
+                  summarise( ppt = sum(ppt, na.rm=T) ) %>%
+                  ungroup %>%
+                  mutate( month = as.numeric(month) ) %>%
+                  mutate( year = as.numeric(year) ) 
     
   # range of years
   max_yr    <- max(lambda_d$year)
