@@ -27,94 +27,93 @@ format_species <- function(spp_name, lam){
 }
 
 # separate climate variables by population 
-clim_list <- function(spp_name, clim, clim_var, lam_spp){
-  
-  # if species belongs to Dalgleish et al. 2010
-  if( (spp_name %in% Dalgleish_spp) & clim_var != "pet" ){
-    
-    yr_seq    <- c( (max(lam_spp[[1]]$year)-49):max(lam_spp[[1]]$year) )
-    clim_l    <- clim[[2]] %>%
-                    setNames( c("year",month.abb) ) %>%
-                    subset( year %in% yr_seq ) %>%
-                    list
-    clim_l    <- setNames(clim_l, "Hays")
-    
-  }else{
-  
-    # select species-specific climate
-    # climate NOT BEFORE 1948 (FetchClimate goes back to 1948)
-    clim_spp  <- clim[[1]] %>% 
-                    subset( species == spp_name) %>%
-                    mutate( population = as.factor(population) ) %>%
-                    subset( year > 1947 )
-     
-    # climate variables list
-    clim_l    <- clim_spp %>%
-                    dplyr::select(-population) %>%
-                    split( clim_spp$population )
-
+clim_list <- function(spp_name, clim, lam_spp){#clim_var, 
+ 
+  clim_spp  <- clim %>%
+                  subset( species == spp_name) %>%
+                  mutate( population = as.factor(population) ) 
+                  
+  if( !(spp_name %in% Dalgleish_spp) ){
+    clim_spp <- subset(clim_spp, year > 1947 )
   }
+  
+  # climate variables list
+  clim_l    <- clim_spp %>%
+                  dplyr::select(-population) %>%
+                  split( clim_spp$population )
   
   return(clim_l)
   
 }
 
 # detrend population-level climate; put it in "long" form
-clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
+clim_detrend <- function(clim_x, clim_var = "precip", gdd){ #, pops
 
-  # if climate is for species in Dalgleish et al. 2010
-  if( ncol(clim_x) == 13 ){
+  # format day one
+  day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
+                        format="%d/%m/%Y" ) 
+
+  # climate data
+  clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
+                  as.character %>%
+                  as.data.frame(stringsAsFactors=F) %>%
+                  separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
+                  bind_cols(clim_x) %>%
+                  dplyr::select(-year,-day) %>%
+                  setNames( c("year", "month", "day", "species", "ppt") )
     
-    clim_m <- clim_x
-    
-  }else{
-    
-    # format day one
-    day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
-                          format="%d/%m/%Y" ) 
-  
-    # climate data
-    clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
-                    as.character %>%
-                    as.data.frame(stringsAsFactors=F) %>%
-                    separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
-                    bind_cols(clim_x) %>%
-                    dplyr::select(-year,-day) %>%
-                    setNames( c("year", "month", "day", "species", "ppt") )
-      
-    # monthly climates
-    # if climate var relate to precipitation, monthly SUMS 
-    if( clim_var == "precip" | clim_var == "pet"){
-      clim_m   <- clim_d %>%
+  # monthly climates
+  # if climate var relate to precipitation, monthly SUMS 
+  if( clim_var == "precip" | clim_var == "pet"){
+    clim_m   <- clim_d %>%
+                  group_by(year, month) %>%
+                  summarise( ppt = sum(ppt, na.rm=T) )  %>%
+                  spread( month, ppt ) %>%
+                  setNames( c("year",month.abb) ) %>%            
+                  as.data.frame() #%>%
+                  #add_column(population = pops, .after = 1)
+  }
+  #
+  if( clim_var == "airt"){
+    if( gdd ){
+      clim_m  <- clim_d %>%
+                    mutate( ppt = ppt - 5 ) %>%
+                    mutate( ppt = replace(ppt, ppt < 0, 0) ) %>%
                     group_by(year, month) %>%
                     summarise( ppt = sum(ppt, na.rm=T) )  %>%
                     spread( month, ppt ) %>%
                     setNames( c("year",month.abb) ) %>%            
-                    as.data.frame() #%>%
-                    #add_column(population = pops, .after = 1)
+                    as.data.frame()
+    }else{
+      clim_m  <- clim_d %>%
+                    group_by(year, month) %>%
+                    summarise( ppt = mean(ppt, na.rm=T) )  %>%
+                    spread( month, ppt ) %>%
+                    setNames( c("year",month.abb) ) %>%            
+                    as.data.frame()
     }
-    #
-    if( clim_var == "airt"){
-      clim_m   <- clim_d %>%
-        group_by(year, month) %>%
-        summarise( ppt = mean(ppt, na.rm=T) )  %>%
-        spread( month, ppt ) %>%
-        setNames( c("year",month.abb) ) %>%            
-        as.data.frame()
-    }  
-    # throw error
-    if( !any( clim_var %in% c("precip","pet","airt")) ) {
-      stop( paste0(clim_var," is not a supported varible") ) 
-    }
-    
+  }
+  
+  # throw error
+  if( !any( clim_var %in% c("precip","pet","airt")) ) {
+    stop( paste0(clim_var," is not a supported varible") ) 
   }
   
   # detrend climate
-  d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
-                as.data.frame() %>%
-                bind_cols( clim_m[,"year",drop=F] ) %>%
-                dplyr::select( c("year", month.abb) )
-
+  if( clim_var == "airt" & gdd ){
+    d_prec   <- clim_m
+  }else{
+    d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
+                  as.data.frame() %>%
+                  bind_cols( clim_m[,"year",drop=F] ) %>%
+                  dplyr::select( c("year", month.abb) )
+  }
+  
+  # Make NaNs 0
+  for(c_i in 1:ncol(d_prec) ){
+    d_prec[,c_i] <- replace(d_prec[,c_i], is.nan(d_prec[,c_i]), 0)
+  } 
+  
   return(d_prec)
   
 }
