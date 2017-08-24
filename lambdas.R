@@ -52,7 +52,7 @@ consec_rep <- lam_df %>%
                 group_by(SpeciesAuthor, MatrixPopulation) %>%
                 summarise( consec_yr = tn_yrs(MatrixEndYear) ) %>%
                 subset(consec_yr == TRUE) %>%
-                select(SpeciesAuthor, MatrixPopulation) %>%
+                dplyr::select(SpeciesAuthor, MatrixPopulation) %>%
                 unique
 
 # select species X population with at least **tn** lambdas
@@ -61,7 +61,7 @@ lam_kp  <- subset(lam_df, SpeciesAuthor %in% consec_rep$SpeciesAuthor &
 
 # tests ----------------------------------------------------------------------
 
-# replication by species
+# replication by species is never below *tn*
 rep_tst <- lam_kp %>%
             group_by(SpeciesAuthor, MatrixPopulation) %>%
             summarise( n = n() )
