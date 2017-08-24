@@ -9,16 +9,15 @@ library(testthat)
 
 # climate predictor, months back, max. number of knots
 clim_var  <- "airt"
-m_back    <- 24    
-knots     <- 3
+gdd       <- T
+m_back    <- 12    
+knots     <- 9
 
 
 # read data -----------------------------------------------------------------------------------------
 lam       <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) 
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim_fc   <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
-clim_35   <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
-clim      <- list(clim_fc, clim_35)
+clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
 spp       <- clim$species %>% unique
 
 
@@ -31,13 +30,12 @@ lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%
                 inner_join(month_add)
 lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
 lambdas   <- bind_rows(lam_min, lam_add) %>%
-                subset( !is.na(MatrixEndMonth) )
-
+                subset( !is.na(MatrixEndMonth) ) %>%
+                arrange( SpeciesAuthor )     
 
 mod_sum_l <- list()
 spp_list  <- lambdas$SpeciesAuthor %>% unique   
-spp_list  <- spp_list[ -c(2,3,4,8,9,16,21,22,24) ] #,3,8,14,18,19,20)]
-
+spp_list  <- spp_list[ -c(2,7,12,15,20,21,22,24) ] #,3,8,14,18,19,20)]
 
 # run models and store pictures ------------------------------------------------------
 for(ii in 1:length(spp_list)){
@@ -49,7 +47,7 @@ for(ii in 1:length(spp_list)){
   
   # climate data
   clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-  clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var)
+  clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var, gdd)
   clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
   
   # model data
@@ -148,7 +146,7 @@ for(ii in 1:length(spp_list)){
                                family="gaussian", calc.mean = TRUE)
   
   # plot results ---------------------------------------------------------------
-  tiff(paste0("results/splines/loyo/plots/",clim_var,m_back,"/",spp_name,".tiff"),
+  tiff(paste0("results/splines/plots/",clim_var,m_back,"/",spp_name,".tiff"),
        unit="in", width=6.3, height=3.15, res=400, compression="lzw")
   
   par(mfrow=c(1,2), mar = c(3,3,1.7,0.1), mgp = c(1.8,0.7,0))
@@ -164,7 +162,7 @@ for(ii in 1:length(spp_list)){
   all_llam  <- c(crxval_df$log_lambda, 
                  crxval_df$pred_null, 
                  crxval_df$pred_lm, 
-                 crxval_df$pred_spline) 
+                 crxval_df$pred_spline)
   
   # graph lambdas 
   for(p in 1:length(pops)){
@@ -220,7 +218,14 @@ for(ii in 1:length(spp_list)){
 
 # summary figures
 mod_sum_df <- Reduce(function(...) rbind(...), mod_sum_l)
-write.csv(mod_sum_df, 
-          paste0("results/splines/loyo/summaries/spline_",
-                 clim_var,m_back,"_summaries.csv"),
-          row.names=F)
+if(gdd){
+  write.csv(mod_sum_df, 
+            paste0("results/splines/summaries/spline_",
+                   clim_var,"_gdd",m_back,"_summaries.csv"),
+            row.names=F)
+}else{
+  write.csv(mod_sum_df, 
+            paste0("results/splines/summaries/spline_",
+                   clim_var,m_back,"_summaries.csv"),
+            row.names=F)
+}
