@@ -214,6 +214,7 @@ observed_clim_range <- function(clim_x, lambda_d, spp_name, clim_var){
                   setNames( c("year", "month", "day", "species", "ppt") )
   
   # monthly climates
+  # clim_var == "airt" calculate MEAN monthly air temperature 
   if( clim_var == "airt" ){
     clim_m   <- clim_d %>%
                     group_by(year, month) %>%
@@ -247,7 +248,14 @@ observed_clim_range <- function(clim_x, lambda_d, spp_name, clim_var){
      
     }
   
-    data.frame( year = yrs, ppt = sum(year_clim$ppt) )
+    # Calculate means for "airt"
+    if( clim_var == "airt"){
+      out <- data.frame( year = yrs, ppt = mean(year_clim$ppt) )
+    }else{
+      out <- data.frame( year = yrs, ppt = sum(year_clim$ppt) )
+    }
+    
+    return(out)
     
   }
   
