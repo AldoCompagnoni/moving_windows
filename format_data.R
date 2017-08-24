@@ -198,11 +198,11 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
 
 
 # observed cliamtic range
-observed_clim_range <- function(clim_x, lambda_d, spp_name){
+observed_clim_range <- function(clim_x, lambda_d, spp_name, clim_var){
 
   # format day one
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
-                        format="%d/%m/%Y") 
+                        format="%d/%m/%Y" )
   
   # climate data
   clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
@@ -214,13 +214,22 @@ observed_clim_range <- function(clim_x, lambda_d, spp_name){
                   setNames( c("year", "month", "day", "species", "ppt") )
   
   # monthly climates
-  clim_m   <- clim_d %>%
-                  group_by(year, month) %>%
-                  summarise( ppt = sum(ppt, na.rm=T) ) %>%
-                  ungroup %>%
-                  mutate( month = as.numeric(month) ) %>%
-                  mutate( year = as.numeric(year) ) 
-    
+  if( clim_var == "airt" ){
+    clim_m   <- clim_d %>%
+                    group_by(year, month) %>%
+                    summarise( ppt = mean(ppt, na.rm=T) ) %>%
+                    ungroup %>%
+                    mutate( month = as.numeric(month) ) %>%
+                    mutate( year = as.numeric(year) ) 
+  }else{
+    clim_m   <- clim_d %>%
+                    group_by(year, month) %>%
+                    summarise( ppt = sum(ppt, na.rm=T) ) %>%
+                    ungroup %>%
+                    mutate( month = as.numeric(month) ) %>%
+                    mutate( year = as.numeric(year) ) 
+  }
+  
   # range of years
   max_yr    <- max(lambda_d$year)
   min_yr    <- min(lambda_d$year)
