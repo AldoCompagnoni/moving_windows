@@ -5,7 +5,7 @@ library(tidyverse)
 lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) 
 m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
 clim    <- data.table::fread("precip_fc_demo.csv",  stringsAsFactors = F) #%>%
-precip  <- data.table::fread("precip_fc_demo.csv",  stringsAsFactors = F)
+airt    <- data.table::fread("airt_fc_demo.csv",  stringsAsFactors = F)
 pet     <- data.table::fread("pet_fc_demo.csv",  stringsAsFactors = F)
 spp     <- clim$species %>% unique
 
@@ -26,41 +26,42 @@ spp_list  <- lambdas$SpeciesAuthor %>% unique %>% .[-3] # remove Daphne rodrigue
 
 
 # correlation between PET and precip  -----------------------------------------------
-prec_pet  <- full_join(precip, pet) %>%
+airt_pet  <- full_join(airt, pet) %>%
                 subset( !(species %in% 
                             c("Cirsium_undulatum", "Echinacea_angustifolia", 
                               "Hedyotis_nigricans","Lesquerella_ovalifolia", 
                               "Paronychia_jamesii", "Psoralea_tenuiflora",      
                               "Ratibida_columnifera", "Solidago_mollis", 
-                              "Sphaeralcea_coccinea", "Thelesperma_megapotamicum") ) )
+                              "Sphaeralcea_coccinea", "Thelesperma_megapotamicum") ) ) %>%
+                subset( !(is.na(airt) | is.na(pet)) )
 
 # daily correlations 
-c_spp_day  <- prec_pet %>%
+c_spp_day  <- airt_pet %>%
                 group_by(species) %>%
-                summarise( corr = cor(ppt,pet) )
-c_pop_day  <- prec_pet %>%
+                summarise( corr = cor(pet,airt) )
+c_pop_day  <- airt_pet %>%
                 group_by(species,population) %>%
-                summarise( corr = cor(ppt,pet) )
+                summarise( corr = cor(pet,airt) )
 
 # yearly correlations
-c_spp_yr  <- prec_pet %>%
+c_spp_yr  <- airt_pet %>%
                 group_by(species,year) %>%
-                summarise( ppt = sum(ppt),
-                           pet = sum(pet) ) %>%
-                summarise( corr = cor(ppt,pet) )
-c_pop_yr  <- prec_pet %>%
+                summarise( airt = mean(airt),
+                           pet  = mean(pet) ) %>%
+                summarise( corr = cor(airt,pet) )
+c_pop_yr  <- airt_pet %>%
                 group_by(species,population,year) %>%
-                summarise( ppt = sum(ppt),
-                           pet = sum(pet) ) %>%
-                summarise( corr = cor(ppt,pet) )
+                summarise( airt = mean(airt),
+                           pet  = mean(pet) ) %>%
+                summarise( corr = cor(airt,pet) )
 
 # monthly correlations
-spp_pop   <- prec_pet %>% 
+spp_pop   <- airt_pet %>% 
                 dplyr::select(species,population) %>% 
                 unique %>%
                 mutate( split_factor = c( 1:nrow(.) ) ) %>%
                 mutate( split_factor = as.factor(split_factor) ) %>%
-                full_join( prec_pet ) 
+                full_join( airt_pet ) 
 spp_pop_l <- split(spp_pop, spp_pop$split_factor) 
 
 # means of pet and prec by month
