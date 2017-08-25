@@ -261,7 +261,7 @@ all_e_s_df  <- bind_rows(eff_size_df, eff_size_0) %>% arrange(clim_var, species)
 
 # climate variable and best model
 tiff(paste0("results/moving_windows/loyo/plots/es/es_by_model_climVar.tiff"),
-     unit="in", width=3.15, height=6.3, res=400, compression="lzw")
+     unit="in", width=6.3, height=6.3, res=400, compression="lzw")
 
 par(mfrow=c(2,1), mar = c(2.2,3,0.1,0.1) , mgp=c(1.8,0.7,0))
 boxplot(beta ~ clim_var, ylab = "Effect of climate (beta)", data = eff_size_df) ; abline(h=0,lty=2)
