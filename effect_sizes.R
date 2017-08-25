@@ -84,9 +84,7 @@ summ_by_clim <- function(clim_var){
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F)
   m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-  clim_fc <- data.table::fread(paste0(clim_var,"_fc_demo.csv"),  stringsAsFactors = F)
-  clim_35 <- read.csv( paste0("monthly_",clim_var,"_Dalgleish.csv") )
-  clim    <- list(clim_fc, clim_35)
+  clim    <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
   
   # add monthg info to lambda information
   month_add <- m_info %>%
@@ -201,31 +199,31 @@ summ_by_clim <- function(clim_var){
                       .[-12] # what happened with Daphne_rodriguezii?!?
   
   # create proportion of obeserved climates
-  clim_obs_wrapper <- function(spp_name){
+  clim_obs_wrapper <- function(spp_name, clim_var){
     
     # lambda data
     spp_lambdas   <- format_species(spp_name, lambdas)
     
     # climate data
-    clim_separate <- clim_list(spp_name, clim, clim_var, spp_lambdas)
+    clim_separate <- clim_list(spp_name, clim, spp_lambdas)
     
     # test
     expect_equal(length(spp_lambdas), length(clim_separate) )
     
     # climate ranges
-    clim_rng      <- Map(observed_clim_range, clim_separate, spp_lambdas, spp_name)
+    clim_rng      <- Map(observed_clim_range, clim_separate, spp_lambdas, spp_name, clim_var)
     return(clim_rng)
     
   }
   # information on observed climatic ranges
-  clim_rng_l_l <- lapply(spp_list, clim_obs_wrapper)
+  clim_rng_l_l <- lapply(spp_list, clim_obs_wrapper, clim_var)
   clim_rng_l   <- lapply(clim_rng_l_l, function(x) Reduce(function(...) rbind(...), x))
   clim_rng_df  <- Reduce(function(...) rbind(...), clim_rng_l)
   # means of the propotion of observed climatic variability *across sites*
   clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
   obs_clim_rng <- merge(mod_climate, clim_rng_m) %>%
                     mutate( clim_var = clim_var )
-
+  
   return( obs_clim_rng )
   
 }
@@ -245,6 +243,19 @@ eff_size_df <- mw_summ_df %>%
                   left_join(means_df) %>%
                   subset(model != "ctrl1" )
 
+# effect sizes - control *beta* of ctrl2 when null model (ctrl1) is the best model
+means_0     <- means_df %>% 
+                  subset( model == "ctrl2" ) %>%
+                  mutate( model =  replace(model, model == "ctrl2", "ctrl1") ) 
+eff_size_0  <- mw_summ_df %>% 
+                  dplyr::select( -one_of( c("looic","model_looic","model_looic","rep_n_looic") ) ) %>%
+                  rename( model = model_mse ) %>%
+                  subset(model == "ctrl1" ) %>%
+                  left_join(means_0) 
+
+# all effect sizes
+all_e_s_df  <- bind_rows(eff_size_df, eff_size_0) %>% arrange(clim_var, species)
+
 
 # plots -----------------------------------------------------------------------------------------
 
@@ -252,11 +263,12 @@ eff_size_df <- mw_summ_df %>%
 tiff(paste0("results/moving_windows/loyo/plots/es/es_by_model_climVar.tiff"),
      unit="in", width=3.15, height=6.3, res=400, compression="lzw")
 
-par(mfrow=c(2,1), mar = c(2.5,3,0.1,0.1) , mgp=c(1.8,0.7,0))
-boxplot(beta ~ clim_var, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
-boxplot(beta ~ model, ylab = "beta", data = eff_size_df) ; abline(h=0,lty=2)
+par(mfrow=c(2,1), mar = c(2.2,3,0.1,0.1) , mgp=c(1.8,0.7,0))
+boxplot(beta ~ clim_var, ylab = "Effect of climate (beta)", data = eff_size_df) ; abline(h=0,lty=2)
+boxplot(beta ~ model, ylab = "Effect of climate (beta)", data = all_e_s_df) ; abline(h=0,lty=2)
 
 dev.off()
+
 
 # Categories
 tiff(paste0("results/moving_windows/loyo/plots/es/es_by_category.tiff"),
