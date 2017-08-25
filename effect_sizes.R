@@ -265,7 +265,9 @@ tiff(paste0("results/moving_windows/loyo/plots/es/es_by_model_climVar.tiff"),
 
 par(mfrow=c(2,1), mar = c(2.2,3,0.1,0.1) , mgp=c(1.8,0.7,0))
 boxplot(beta ~ clim_var, ylab = "Effect of climate (beta)", data = eff_size_df) ; abline(h=0,lty=2)
-boxplot(beta ~ model, ylab = "Effect of climate (beta)", data = all_e_s_df) ; abline(h=0,lty=2)
+boxplot(beta ~ model, ylab = "Effect of climate (beta)", 
+        names = c(expression("ctrl2; best mod is H"[0]),"ctrl2","expp","gaus"),
+        data = all_e_s_df) ; abline(h=0,lty=2)
 
 dev.off()
 
