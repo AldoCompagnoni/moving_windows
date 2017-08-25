@@ -1,13 +1,13 @@
-setwd("C:/cloud/Dropbox/sAPROPOS project/")
+setwd("C:/cloud/MEGA/Projects/sApropos")
 library(tidyverse)
 
 # read data -----------------------------------------------------------------------------------------
-lam     <- read.csv("DemogData/lambdas_6tr.csv", stringsAsFactors = F) 
-m_info  <- read.csv("C:/cloud/MEGA/Projects/sApropos/MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim    <- read.csv("DemogData/precip_fc_demo.csv",  stringsAsFactors = F) #%>%
-#mutate( ppt = ppt / 30)
+lam     <- read.csv("lambdas_6tr.csv", stringsAsFactors = F) 
+m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
+clim    <- data.table::fread("precip_fc_demo.csv",  stringsAsFactors = F) #%>%
+precip  <- data.table::fread("precip_fc_demo.csv",  stringsAsFactors = F)
+pet     <- data.table::fread("pet_fc_demo.csv",  stringsAsFactors = F)
 spp     <- clim$species %>% unique
-
 
 # add monthg info to lambda information
 month_add <- m_info %>%
@@ -23,6 +23,92 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 mod_sum_l <- list()
 # spp list - WITHOUT Daphne rodriguezii
 spp_list  <- lambdas$SpeciesAuthor %>% unique %>% .[-3] # remove Daphne rodriguezii
+
+
+# correlation between PET and precip  -----------------------------------------------
+prec_pet  <- full_join(precip, pet) %>%
+                subset( !(species %in% 
+                            c("Cirsium_undulatum", "Echinacea_angustifolia", 
+                              "Hedyotis_nigricans","Lesquerella_ovalifolia", 
+                              "Paronychia_jamesii", "Psoralea_tenuiflora",      
+                              "Ratibida_columnifera", "Solidago_mollis", 
+                              "Sphaeralcea_coccinea", "Thelesperma_megapotamicum") ) )
+
+# daily correlations 
+c_spp_day  <- prec_pet %>%
+                group_by(species) %>%
+                summarise( corr = cor(ppt,pet) )
+c_pop_day  <- prec_pet %>%
+                group_by(species,population) %>%
+                summarise( corr = cor(ppt,pet) )
+
+# yearly correlations
+c_spp_yr  <- prec_pet %>%
+                group_by(species,year) %>%
+                summarise( ppt = sum(ppt),
+                           pet = sum(pet) ) %>%
+                summarise( corr = cor(ppt,pet) )
+c_pop_yr  <- prec_pet %>%
+                group_by(species,population,year) %>%
+                summarise( ppt = sum(ppt),
+                           pet = sum(pet) ) %>%
+                summarise( corr = cor(ppt,pet) )
+
+# monthly correlations
+spp_pop   <- prec_pet %>% 
+                dplyr::select(species,population) %>% 
+                unique %>%
+                mutate( split_factor = c( 1:nrow(.) ) ) %>%
+                mutate( split_factor = as.factor(split_factor) ) %>%
+                full_join( prec_pet ) 
+spp_pop_l <- split(spp_pop, spp_pop$split_factor) 
+
+# means of pet and prec by month
+by_month_means <- function(clim_x){
+  
+  # format day one
+  day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), format="%d/%m/%Y" ) 
+  
+  # climate data
+  clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
+    as.character %>%
+    as.data.frame(stringsAsFactors=F) %>%
+    separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
+    bind_cols(clim_x) %>%
+    dplyr::select(-year,-day,-split_factor) %>%
+    setNames( c("year", "month", "day", 
+                "species", "population", "ppt", "pet") ) %>%
+    group_by(species,population,year,month) %>%       
+    summarise( ppt = sum(ppt),
+               pet = sum(pet) ) %>%
+    ungroup
+  
+  return(clim_d)
+  
+}
+spp_pop_m_l <- lapply(spp_pop_l, by_month_means)
+spp_pop_df  <- Reduce(function(...) rbind(...), spp_pop_m_l)
+
+# monthly correlations
+c_spp_mon   <- spp_pop_df %>%
+                  group_by(species) %>%
+                  summarise( corr = cor(ppt, pet) )
+c_pop_mon   <- spp_pop_df %>%
+                  group_by(species, population) %>%
+                  summarise( corr = cor(ppt, pet) )
+
+# means
+mean(c_pop_day$corr);  mean(c_spp_day$corr)
+mean(c_spp_mon$corr); mean(c_pop_mon$corr)
+mean(c_spp_yr$corr);  mean(c_pop_yr$corr)
+
+# histograms
+par(mfrow=c(3,2))
+hist(c_spp_yr$corr, xlim=c(-1,1));  hist(c_pop_yr$corr, xlim=c(-1,1))
+hist(c_spp_mon$corr, xlim=c(-1,1)); hist(c_pop_mon$corr, xlim=c(-1,1))
+hist(c_pop_day$corr, xlim=c(-1,1));  hist(c_pop_day$corr, xlim=c(-1,1))
+
+
 
 
 
