@@ -45,19 +45,16 @@ lam_df  <- bind_cols(compadre$metadata[spp_id,], lambdas) %>%
 
 
 # keep only species with at least **tn** lambdas per EACH MaxtrixPopulation -------------------------------
-tn_yrs <- function(x){ sum( diff(x) == 1) >= (tn-1) }
 
-# species and populations consecutive yearly data
-consec_rep <- lam_df %>%
+# species with at least **tn** transitions
+enough_rep <- lam_df %>%
                 group_by(SpeciesAuthor, MatrixPopulation) %>%
-                summarise( consec_yr = tn_yrs(MatrixEndYear) ) %>%
-                subset(consec_yr == TRUE) %>%
-                dplyr::select(SpeciesAuthor, MatrixPopulation) %>%
-                unique
+                summarise( rep = n() ) %>%
+                subset( rep >= tn)
 
 # select species X population with at least **tn** lambdas
-lam_kp  <- subset(lam_df, SpeciesAuthor %in% consec_rep$SpeciesAuthor & 
-                          MatrixPopulation %in% consec_rep$MatrixPopulation)
+lam_kp     <- subset(lam_df, SpeciesAuthor %in% enough_rep$SpeciesAuthor & 
+                             MatrixPopulation %in% enough_rep$MatrixPopulation)
 
 # tests ----------------------------------------------------------------------
 
