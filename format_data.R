@@ -13,14 +13,14 @@ format_species <- function(spp_name, lam, response = "lambda"){
   if( response == "lambda" ){
     lam_sel <- lam %>%
                   subset(SpeciesAuthor == spp_name) %>%
-                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
+                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda, log_lambda) %>%
                   setNames(c("year","month","population", "lambda", "log_lambda" )) %>%
                   mutate( population = as.factor(population) )
   } else{
     lam_sel <- lam %>%
                   subset(SpeciesAuthor == spp_name) %>%
-                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
-                  setNames(c("year","month","population", response) ) %>%
+                  dplyr::select( c("MatrixEndYear", "MatrixEndMonth", "MatrixPopulation", response) ) %>%
+                  setNames( c("year","month","population", response) ) %>%
                   mutate( population = as.factor(population) )
   }
   
