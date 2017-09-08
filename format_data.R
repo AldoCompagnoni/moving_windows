@@ -8,14 +8,21 @@ Dalgleish_spp <- c("Cirsium_undulatum", "Echinacea_angustifolia",
                    "Sphaeralcea_coccinea", "Thelesperma_megapotamicum")
 
 # format species 
-format_species <- function(spp_name, lam){
+format_species <- function(spp_name, lam, response = "lambda"){
   
-  lam_sel <- lam %>%
-                subset(SpeciesAuthor == spp_name) %>%
-                dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
-                setNames(c("year","month","population","lambda")) %>%
-                mutate(log_lambda = log(lambda),
-                       population = as.factor(population) )
+  if( response == "lambda" ){
+    lam_sel <- lam %>%
+                  subset(SpeciesAuthor == spp_name) %>%
+                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
+                  setNames(c("year","month","population", "lambda", "log_lambda" )) %>%
+                  mutate( population = as.factor(population) )
+  } else{
+    lam_sel <- lam %>%
+                  subset(SpeciesAuthor == spp_name) %>%
+                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda) %>%
+                  setNames(c("year","month","population", response) ) %>%
+                  mutate( population = as.factor(population) )
+  }
   
   # list of pop-specific lambdas
   lam_l   <- lam_sel %>%
