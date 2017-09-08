@@ -56,6 +56,9 @@ enough_rep <- lam_df %>%
 lam_kp     <- subset(lam_df, SpeciesAuthor %in% enough_rep$SpeciesAuthor & 
                              MatrixPopulation %in% enough_rep$MatrixPopulation)
 
+# add log_lambda among predictors
+lam_kp     <- mutate(lam_kp, log_lambda = log(lambda) )
+
 # tests ----------------------------------------------------------------------
 
 # replication by species is never below *tn*
@@ -64,17 +67,17 @@ rep_tst <- lam_kp %>%
             summarise( n = n() )
 expect_equal(min(rep_tst$n), tn)
 
-# are the *tn* years consecutive? 
-consec_yr <- function(r, lam_kp, consec_rep){
-  
-  subset(lam_kp, SpeciesAuthor %in% consec_rep$SpeciesAuthor[r] & 
-               MatrixPopulation %in% consec_rep$MatrixPopulation[r]) %>%
-              .$MatrixEndYear %>%
-              tn_yrs
-  
-}
-cons_tst <- sapply(1:nrow(consec_rep), consec_yr, lam_kp, consec_rep)
-expect_true( all(cons_tst) )
+# # are the *tn* years consecutive? 
+# consec_yr <- function(r, lam_kp, consec_rep){
+#   
+#   subset(lam_kp, SpeciesAuthor %in% consec_rep$SpeciesAuthor[r] & 
+#                MatrixPopulation %in% consec_rep$MatrixPopulation[r]) %>%
+#               .$MatrixEndYear %>%
+#               tn_yrs
+#   
+# }
+# cons_tst <- sapply(1:nrow(consec_rep), consec_yr, lam_kp, consec_rep)
+# expect_true( all(cons_tst) )
 
 
 # store -----------------------------------------------------------------------------------
