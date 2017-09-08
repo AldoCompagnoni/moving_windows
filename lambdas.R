@@ -1,5 +1,5 @@
 # subsetting studies in the COMPADRE with enough temporal replication 
-setwd("~/Dropbox/sAPROPOS project/DemogData")
+setwd("C:/cloud/MEGA/Projects/sApropos")
 library(dplyr)
 library(tidyr)
 library(testthat)
