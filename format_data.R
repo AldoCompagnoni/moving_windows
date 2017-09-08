@@ -164,7 +164,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
 }
 
 # combine climate data frames (if any)
-lambda_plus_clim <- function(lambdas_l, clim_mat_l){
+lambda_plus_clim <- function(lambdas_l, clim_mat_l, response = "lambda"){
   
   # lambda and climate n. of populations correspond?
   if( length(lambdas_l) != length(clim_mat_l) ) stop("lambda and climate lists have differing lengths")
@@ -188,16 +188,27 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l){
     clim_lam  <- merge(lambdas_l[[1]], clim_mat_l[[1]]) 
     
   }
-    
-  # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
-  clim_lam    <- arrange(clim_lam, year, population)  %>%
-                  subset( lambda != 0 ) 
-  # erase any row containing NAs (for Dalgleish et al. 2010 data)
-  r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
-  if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
-  lam_out     <- dplyr::select(clim_lam, year:log_lambda)
-  clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
-  out         <- list(lambdas = lam_out, climate = clim_out)
+  
+  if( response == "lambda"){
+    # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
+    clim_lam    <- arrange(clim_lam, year, population)  %>%
+                      subset( lambda != 0 ) 
+    # erase any row containing NAs (for Dalgleish et al. 2010 data)
+    r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
+    if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
+    lam_out     <- dplyr::select(clim_lam, year:log_lambda)
+    clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
+    out         <- list(lambdas = lam_out, climate = clim_out)
+  }else{
+    # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
+    clim_lam    <- arrange(clim_lam, year, population)
+    # erase any row containing NAs (for Dalgleish et al. 2010 data)
+    r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
+    if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
+    eval(parse(n=1, text=paste0("lam_out <- dplyr::select(clim_lam, year:",response,")")))
+    eval(parse(n=1, text=paste0("clim_out<- dplyr::select(clim_lam, -c(year:",response,"))")))
+    out         <- list(lambdas = lam_out, climate = clim_out)
+  }
   
   return(out)
   
