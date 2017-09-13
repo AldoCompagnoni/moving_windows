@@ -10,23 +10,19 @@ Dalgleish_spp <- c("Cirsium_undulatum", "Echinacea_angustifolia",
 # format species 
 format_species <- function(spp_name, lam, response = "lambda"){
   
-  if( response == "lambda" ){
-    lam_sel <- lam %>%
-                  subset(SpeciesAuthor == spp_name) %>%
-                  dplyr::select(MatrixEndYear, MatrixEndMonth, MatrixPopulation, lambda, log_lambda) %>%
-                  setNames(c("year","month","population", "lambda", "log_lambda" )) %>%
-                  mutate( population = as.factor(population) )
-  } else{
-    lam_sel <- lam %>%
-                  subset(SpeciesAuthor == spp_name) %>%
-                  dplyr::select( c("MatrixEndYear", "MatrixEndMonth", "MatrixPopulation", response) ) %>%
-                  setNames( c("year","month","population", response) ) %>%
-                  mutate( population = as.factor(population) )
-  }
-  
+  # only in the case of lambda, we include "log_lambda" as well
+  if( response == "lambda" ) response = c("lambda", "log_lambda")
+
+  # fetch what you need from 'lam' object
+  lam_sel <- lam %>%
+                subset( SpeciesAuthor == spp_name ) %>%
+                dplyr::select( c("MatrixEndYear", "MatrixEndMonth", "MatrixPopulation", response) ) %>%
+                setNames( c("year","month","population", response) ) %>%
+                mutate( population = as.factor(population) )
+
   # list of pop-specific lambdas
   lam_l   <- lam_sel %>%
-                dplyr::select(-population) %>%
+                dplyr::select( -population ) %>%
                 split( lam_sel$population )
   
   return(lam_l)
