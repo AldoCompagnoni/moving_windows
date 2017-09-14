@@ -14,7 +14,7 @@ rstan_options( auto_write = TRUE )
 options( mc.cores = parallel::detectCores() )
 
 # climate predictor, months back, max. number of knots
-clim_var  <- "airt"
+clim_var  <- "precip"
 gdd       <- T
 m_back    <- 24    
 
@@ -41,7 +41,8 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 # format data --------------------------------------------------------------------------------------
 
 # set response variable
-response      <- "surv"
+response      <- "fec"
+family        <- "log"
 expp_beta     <- 20
 
 # species list
@@ -84,11 +85,9 @@ sim_pars <- list(
   chains = 4
 )
 
-
-start_time <- Sys.time()
 # NULL model (model of the mean)
 fit_ctrl1 <- stan(
-  file = "stan/beta_null.stan",
+  file = paste0("stan/",family,"_null.stan"),
   data = dat_stan,
   pars = c('alpha', 'y_sd', 'log_lik'),
   warmup = sim_pars$warmup,
@@ -100,7 +99,7 @@ fit_ctrl1 <- stan(
 
 # average climate model
 fit_ctrl2 <- stan(
-  file = "stan/beta_ctrl2.stan",
+  file = paste0("stan/",family,"_ctrl2.stan"),
   data = dat_stan,
   pars = c('alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = sim_pars$warmup,
@@ -112,7 +111,7 @@ fit_ctrl2 <- stan(
 
 # gaussian moving window
 fit_gaus <- stan(
-  file = "stan/beta_gaus.stan",
+  file = paste0("stan/",family,"_gaus.stan"),
   data = dat_stan,
   pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = sim_pars$warmup,
@@ -124,7 +123,7 @@ fit_gaus <- stan(
 
 # exponential power moving window
 fit_expp <- stan(
-  file = "stan/beta_expp.stan",
+  file = paste0("stan/",family,"_expp.stan"),
   data = dat_stan,
   pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'log_lik'),
   warmup = sim_pars$warmup,
@@ -133,7 +132,6 @@ fit_expp <- stan(
   chains = sim_pars$chains#,
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
-Sys.time() - start_time
 
 
 # parameter values and diagnostics ----------------------------------------------------------------
@@ -260,7 +258,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   
   # fit control 1 (intercept only)
   fit_ctrl1_crossval <- stan(
-    file = 'stan/beta_null_crossval.stan',
+    file = paste0("stan/",family,"_null_crossval.stan"),
     data = dat_stan_crossval,
     pars = c('alpha', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
     warmup = sim_pars$warmup,
@@ -271,7 +269,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   
   # fit control 2 (full window climate average)
   fit_ctrl2_crossval <- stan(
-    file = 'stan/beta_ctrl2_crossval.stan',
+    file = paste0("stan/",family,"_ctrl2_crossval.stan"),
     data = dat_stan_crossval,
     pars = c('alpha', 'beta', 'y_sd', 'pred_y', 'log_lik', 'log_lik_test'),
     warmup = sim_pars$warmup,
@@ -282,7 +280,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   
   # fit moving window, gaussian
   fit_gaus_crossval <- stan( 
-    file = 'stan/beta_gaus_crossval.stan',
+    file = paste0("stan/",family,"_gaus_crossval.stan"), 
     data = dat_stan_crossval,
     pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
     warmup = sim_pars$warmup,
@@ -294,7 +292,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   
   # fit moving window, exponential power
   fit_expp_crossval <- stan( 
-    file = 'stan/beta_expp_crossval.stan',
+    file = paste0("stan/",family,"_expp_crossval.stan"),
     data = dat_stan_crossval,
     pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
     warmup = sim_pars$warmup,
