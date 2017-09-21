@@ -20,6 +20,7 @@ m_back    <- 24
 
 
 # read data -----------------------------------------------------------------------------------------
+
 lam       <- read.csv("all_demog_6tr.csv", stringsAsFactors = F)
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
 clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
@@ -41,17 +42,21 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 # format data --------------------------------------------------------------------------------------
 
 # set response variable
-response      <- "fec"
-family        <- "log"
+response      <- "surv"
+# set up model "family" based on response
+if(response == "surv" | response == "grow") family = "beta" 
+if(response == "fec")                       family = "log"   
 expp_beta     <- 20
 
 # species list
 spp_list      <- lambdas$SpeciesAuthor %>% unique
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- which(spp_list == "Sphaeralcea_coccinea")
-ii            <- which(spp_list == "Brassica_insularis")
+ii            <- which(spp_list == "Sphaeralcea_coccinea" )
+ii            <- which(spp_list == "Helianthemum_juliae" )
+ii            <- which(spp_list == "Daphne_rodriguezii" )
 spp_name      <- spp_list[ii]
+
 # lambda data
 spp_lambdas   <- format_species(spp_name, lambdas, response)
 
@@ -66,6 +71,29 @@ mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
 
 
 # Fit models ----------------------------------------------------------------------------------------
+
+# transform survival/growth - ONLY if less than 30% data points are 1/0
+if(response == "surv" | response == "grow"){
+  
+  raw_x <- mod_data$lambdas[,response]
+  pc_1  <- sum( raw_x == 1 ) / length(raw_x)
+  pc_0  <- sum( raw_x == 0 ) / length(raw_x)
+  
+  # for survival
+  if(response == "surv" & pc_1 < 0.3 ){
+    n     <- length(raw_x)
+    new_x <- ( raw_x*(n - 1) + 0.5 ) / n
+    mod_data$lambdas[,response] <- new_x
+  }
+  
+  # for growth
+  if(response == "grow" & pc_0 < 0.3 ){
+    n     <- length(raw_x)
+    new_x <- ( raw_x*(n - 1) + 0.5 ) / n
+    mod_data$lambdas[,response] <- new_x
+  }
+  
+}
 
 # organize data into list to pass to stan
 dat_stan <- list(
@@ -366,7 +394,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
 
 # spp-specific cross validation
 year_inds   <- seq_along(unique(mod_data$lambdas$year))
-cxval_res   <- lapply( year_inds, CrossVal, mod_data, "surv")
+cxval_res   <- lapply( year_inds, CrossVal, mod_data, response)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
 # measures of fit -------------------------------------------------------------------------- 
