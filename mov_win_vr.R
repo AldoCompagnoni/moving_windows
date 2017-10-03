@@ -14,8 +14,8 @@ rstan_options( auto_write = TRUE )
 options( mc.cores = parallel::detectCores() )
 
 # climate predictor, months back, max. number of knots
-clim_var  <- "precip"
-gdd       <- T
+clim_var  <- "airt"
+gdd       <- F
 m_back    <- 24    
 
 
@@ -42,19 +42,20 @@ lambdas   <- bind_rows(lam_min, lam_add) %>%
 # format data --------------------------------------------------------------------------------------
 
 # set response variable
-response      <- "surv"
+response      <- "fec"
 # set up model "family" based on response
 if(response == "surv" | response == "grow") family = "beta" 
-if(response == "fec")                       family = "log"   
+if(response == "fec")                       family = "gamma"   
+if(response == "log_lambda")                family = "normal"
 expp_beta     <- 20
 
 # species list
 spp_list      <- lambdas$SpeciesAuthor %>% unique
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- which(spp_list == "Sphaeralcea_coccinea" )
+ii            <- which(spp_list == "Thelesperma_megapotamicum" )
 ii            <- which(spp_list == "Helianthemum_juliae" )
-ii            <- which(spp_list == "Daphne_rodriguezii" )
+ii            <- which(spp_list == "Actaea_spicata" )
 spp_name      <- spp_list[ii]
 
 # lambda data
@@ -94,6 +95,11 @@ if(response == "surv" | response == "grow"){
   }
   
 }
+
+if(response == "fec"){
+  mod_data$lambdas[,response] <- mod_data$lambdas[,response] + 1.54e-12
+} 
+
 
 # organize data into list to pass to stan
 dat_stan <- list(
@@ -137,6 +143,8 @@ fit_ctrl2 <- stan(
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
 
+# posterior predictive check
+
 # gaussian moving window
 fit_gaus <- stan(
   file = paste0("stan/",family,"_gaus.stan"),
@@ -160,7 +168,6 @@ fit_expp <- stan(
   chains = sim_pars$chains#,
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
-
 
 # parameter values and diagnostics ----------------------------------------------------------------
 
