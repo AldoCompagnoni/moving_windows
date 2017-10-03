@@ -11,7 +11,7 @@ Dalgleish_spp <- c("Cirsium_undulatum", "Echinacea_angustifolia",
 format_species <- function(spp_name, lam, response = "lambda"){
   
   # only in the case of lambda, we include "log_lambda" as well
-  if( response == "lambda" ) response = c("lambda", "log_lambda")
+  # if( response == "lambda" ) response = c("lambda", "log_lambda")
 
   # fetch what you need from 'lam' object
   lam_sel <- lam %>%
@@ -131,7 +131,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   
   # detrended climate in "long" form
   long_out  <- clim_detr %>%
-                  subset(year < (yr_range[2]+1) & year > (yr_range[1] - 4) ) %>%
+                  subset(year < (yr_range[2]+1) & year > (yr_range[1] - 6) ) %>%
                   gather(month, precip, Jan:Dec) %>%
                   setNames(c("year", "month", "clim_value")) %>% 
                   mutate(month_num = factor(month, levels = month.abb) ) %>% 
