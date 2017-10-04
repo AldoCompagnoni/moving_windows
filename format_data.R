@@ -50,7 +50,7 @@ clim_list <- function(spp_name, clim, lam_spp){#clim_var,
 }
 
 # detrend population-level climate; put it in "long" form
-clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
+clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
 
   # format day one
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
@@ -80,7 +80,16 @@ clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
       spread( month, ppt ) %>%
       setNames( c("year",month.abb) ) %>%            
       as.data.frame() #%>%
-      #add_column(population = pops, .after = 1)
+  }
+
+  # if st_dev == T, this overrides the above conditional statements
+  if(st_dev == T){
+    clim_m   <- clim_d %>%
+      group_by(year, month) %>%
+      summarise( ppt = sd(ppt, na.rm=T) )  %>%
+      spread( month, ppt ) %>%
+      setNames( c("year",month.abb) ) %>%            
+      as.data.frame() #%>%
   }
   
   # throw error
