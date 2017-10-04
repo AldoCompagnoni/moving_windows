@@ -50,7 +50,7 @@ clim_list <- function(spp_name, clim, lam_spp){#clim_var,
 }
 
 # detrend population-level climate; put it in "long" form
-clim_detrend <- function(clim_x, clim_var = "precip", gdd){ #, pops
+clim_detrend <- function(clim_x, clim_var = "precip"){ #, pops
 
   # format day one
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
@@ -65,51 +65,37 @@ clim_detrend <- function(clim_x, clim_var = "precip", gdd){ #, pops
                   dplyr::select(-year,-day) %>%
                   setNames( c("year", "month", "day", "species", "ppt") )
     
-  # monthly climates
-  # if climate var relate to precipitation, monthly SUMS 
-  if( clim_var == "precip" | clim_var == "pet"){
-    clim_m   <- clim_d %>%
-                  group_by(year, month) %>%
-                  summarise( ppt = sum(ppt, na.rm=T) )  %>%
-                  spread( month, ppt ) %>%
-                  setNames( c("year",month.abb) ) %>%            
-                  as.data.frame() #%>%
-                  #add_column(population = pops, .after = 1)
-  }
-  #
+  # # if climate_var airt, then do means, otherwise, do sums! 
   if( clim_var == "airt"){
-    if( gdd ){
-      clim_m  <- clim_d %>%
-                    mutate( ppt = ppt - 5 ) %>%
-                    mutate( ppt = replace(ppt, ppt < 0, 0) ) %>%
-                    group_by(year, month) %>%
-                    summarise( ppt = sum(ppt, na.rm=T) )  %>%
-                    spread( month, ppt ) %>%
-                    setNames( c("year",month.abb) ) %>%            
-                    as.data.frame()
-    }else{
-      clim_m  <- clim_d %>%
-                    group_by(year, month) %>%
-                    summarise( ppt = mean(ppt, na.rm=T) )  %>%
-                    spread( month, ppt ) %>%
-                    setNames( c("year",month.abb) ) %>%            
-                    as.data.frame()
-    }
+    clim_m  <- clim_d %>%
+      group_by(year, month) %>%
+      summarise( ppt = mean(ppt, na.rm=T) )  %>%
+      spread( month, ppt ) %>%
+      setNames( c("year",month.abb) ) %>%            
+      as.data.frame()
+  } else{
+    clim_m   <- clim_d %>%
+      group_by(year, month) %>%
+      summarise( ppt = sum(ppt, na.rm=T) )  %>%
+      spread( month, ppt ) %>%
+      setNames( c("year",month.abb) ) %>%            
+      as.data.frame() #%>%
+      #add_column(population = pops, .after = 1)
   }
   
   # throw error
-  if( !any( clim_var %in% c("precip","pet","airt")) ) {
+  if( !any( clim_var %in% c("precip","pet","airt","gdd")) ) {
     stop( paste0(clim_var," is not a supported varible") ) 
   }
   
-  # detrend climate
-  if( clim_var == "airt" & gdd ){
-    d_prec   <- clim_m
-  }else{
+  # detrend climate - but NOT if you are using GDD 
+  if( clim_var != "gdd" ){
     d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                   as.data.frame() %>%
                   bind_cols( clim_m[,"year",drop=F] ) %>%
                   dplyr::select( c("year", month.abb) )
+  }else{
+    d_prec   <- clim_m
   }
   
   # Make NaNs 0
