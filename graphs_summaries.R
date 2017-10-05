@@ -6,7 +6,7 @@ library(magrittr)
 library(testthat)
 options(stringsAsFactors = F )
 
-response      <- "fec"
+response      <- "grow"
 m_back        <- 24
 
 
@@ -216,18 +216,22 @@ tiff(paste0("results/moving_windows/",response,"/best_mods.tiff"),
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
+# set up barplot data frame
 best_mod_l  <- lapply( split(mw_summ_df$model_mse, as.factor(mw_summ_df$clim_var) ),
                        function(x) table(x) )
 best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
-# colnames(best_mod_df) <- c("Air temp.","GDD","PET","Precipitation")
-# barplot(best_mod_df, beside=T, col = c("black", "grey40", "grey", "white"))
-# legend("topright", c("NULL", "24 Mon", "Expp", "Gaus"),
-#        fill = c("black", "grey40", "grey", "white"),
-#        bty = "n")
+
+
+# define which colors to plot
+color_df    <-  data.frame( model = c("ctrl1", "ctrl2", "expp", "gaus"),
+                            model_name = c("NULL", "24 Mon", "Expp", "Gaus"), 
+                            col   = c("black", "grey40", "grey", "white") )
+color_plot  <- left_join( data.frame(model = rownames(best_mod_df) ), 
+                          color_df )
+
 colnames(best_mod_df) <- c("Air temp.","Precipitation")
-barplot(best_mod_df, beside=T, col = c("black", "grey40", "grey", "white"))
-legend("topright", c("NULL", "24 Mon", "Expp", "Gaus"),
-       fill = c("black", "grey40", "grey", "white"),
+barplot(best_mod_df, beside=T, col = color_plot$col )
+legend("topright", color_plot$model_name, fill = color_plot$col,
        bty = "n")
 
 dev.off()
