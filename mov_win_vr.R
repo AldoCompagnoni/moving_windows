@@ -13,65 +13,62 @@ library(loo)
 rstan_options( auto_write = TRUE )
 options( mc.cores = parallel::detectCores() )
 
-# climate predictor, months back, max. number of knots
-clim_var  <- "airt"
-gdd       <- F
+# climate predictor, response, months back, max. number of knots
+response  <- "react_fsa"
+clim_var  <- "precip"
 m_back    <- 24    
-
+st_dev    <- FALSE
 
 # read data -----------------------------------------------------------------------------------------
-
 lam       <- read.csv("all_demog_6tr.csv", stringsAsFactors = F)
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
 clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
-spp       <- clim$species %>% unique
 
-# add monthg info to lambda information
+# add month info to lambda information
 month_add <- m_info %>%
               mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
               dplyr::select(SpeciesAuthor, MatrixEndMonth)
 lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%
               dplyr::select(-MatrixEndMonth) %>%
               inner_join(month_add)
-lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, lam_add$SpeciesAuthor) )
+lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
 lambdas   <- bind_rows(lam_min, lam_add) %>%
-              subset( !is.na(MatrixEndMonth) ) %>%
-              arrange( SpeciesAuthor )
+              subset( !is.na(MatrixEndMonth) ) #%>%
+              #arrange( SpeciesAuthor )
+spp       <- lambdas$SpeciesAuthor %>% unique
 
 
 # format data --------------------------------------------------------------------------------------
 
-# set response variable
-response      <- "fec"
 # set up model "family" based on response
-if(response == "surv" | response == "grow") family = "beta" 
-if(response == "fec")                       family = "gamma"   
-if(response == "log_lambda")                family = "normal"
+if(response == "surv" | response == "grow")       family = "beta" 
+if(response == "fec")                             family = "gamma"
+if(response == "rho" | response == "react_fsa" )  family = "gamma"
+if(response == "log_lambda")                      family = "normal"
+
 expp_beta     <- 20
 
-# species list
-spp_list      <- lambdas$SpeciesAuthor %>% unique
-
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- which(spp_list == "Thelesperma_megapotamicum" )
-ii            <- which(spp_list == "Helianthemum_juliae" )
-ii            <- which(spp_list == "Actaea_spicata" )
-spp_name      <- spp_list[ii]
+ii            <- 1
+spp_name      <- spp[ii]
 
 # lambda data
 spp_lambdas   <- format_species(spp_name, lambdas, response)
 
 # climate data
 clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var, gdd)
+clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var, st_dev)
 clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
 
 # model data
 mod_data          <- lambda_plus_clim(spp_lambdas, clim_mats, response)
 mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
 
+# throw error if not enough data
+if( nrow(mod_data$lambdas) < 6 ) stop( paste0("not enough temporal replication for '", 
+                                              spp_name, "' and response variable '" , response, "'") )
 
-# Fit models ----------------------------------------------------------------------------------------
+# Transform response variables (if needed) ------------------------------------------------------------------
 
 # transform survival/growth - ONLY if less than 30% data points are 1/0
 if(response == "surv" | response == "grow"){
@@ -96,10 +93,20 @@ if(response == "surv" | response == "grow"){
   
 }
 
+# avoid absolute zeros
 if(response == "fec"){
-  mod_data$lambdas[,response] <- mod_data$lambdas[,response] + 1.54e-12
+  # transform from [0, infinity) to (0, infinity) 
+  # I add quantity 2 orders of mag. lower than lowest obs value.
+  mod_data$lambdas[,response] <- mod_data$lambdas[,response] + 1.54e-12 
 } 
 
+if(response == "rho" | response == "react_fsa" ){
+  # bound responses to (0,infinity) instead of [1, infinity) 
+  mod_data$lambdas[,response] <- mod_data$lambdas[,response] - 0.99999
+} 
+
+
+# Fit models ----------------------------------------------------------------------------------------
 
 # organize data into list to pass to stan
 dat_stan <- list(
@@ -142,8 +149,6 @@ fit_ctrl2 <- stan(
   chains = sim_pars$chains
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
-
-# posterior predictive check
 
 # gaussian moving window
 fit_gaus <- stan(
