@@ -6,7 +6,7 @@ library(magrittr)
 library(testthat)
 options(stringsAsFactors = F )
 
-response      <- "grow"
+response      <- "fec"
 m_back        <- 24
 
 
@@ -21,14 +21,15 @@ summ_by_clim <- function(clim_var, response){
   
   # add monthg info to lambda information
   month_add <- m_info %>%
-    mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
-    dplyr::select(SpeciesAuthor, MatrixEndMonth)
+                  mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
+                  dplyr::select(SpeciesAuthor, MatrixEndMonth)
   lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%  
-    dplyr::select(-MatrixEndMonth) %>%
-    inner_join(month_add)
+                  dplyr::select(-MatrixEndMonth) %>%
+                  inner_join(month_add)
   lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
   lambdas   <- bind_rows(lam_min, lam_add) %>%
-    subset( !is.na(MatrixEndMonth) )
+                  subset( !is.na(MatrixEndMonth) ) %>%
+                  subset( SpeciesAuthor != "Eryngium_alpinum" )
   
   # summaries organism type/biome
   by_spp_rep <- function(var){
@@ -47,47 +48,52 @@ summ_by_clim <- function(clim_var, response){
   
   # I chose to use the following categories
   categ     <- lambdas %>%
-    dplyr::select( c("SpeciesAuthor","OrganismType","Ecoregion", "DicotMonoc", "Class") ) %>%
-    rename( species = SpeciesAuthor) %>%
-    unique
+                  dplyr::select( c("SpeciesAuthor","OrganismType","Ecoregion", "DicotMonoc", "Class") ) %>%
+                  rename( species = SpeciesAuthor) %>%
+                  unique
   
   # summary info ----------------------------------------------------------------------------
   res_folder<- paste0("results/moving_windows/",response,"/",clim_var) 
   sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
   crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
   mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
-    setNames( gsub("mod_summaries_", "", sum_files ) ) %>%
-    setNames( gsub(".csv", "", names(.) ) )
+                  setNames( gsub("mod_summaries_", "", sum_files ) ) %>%
+                  setNames( gsub(".csv", "", names(.) ) )
   replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>% nrow ) %>%
-    setNames( gsub("crossval_pred_diag_", "", crx_files ) ) %>%
-    setNames( gsub(".csv", "", names(.) ) ) %>%
-    unlist %>% t %>% t %>% as.data.frame %>% 
-    tibble::rownames_to_column(var = "species") %>%
-    rename( rep_n = V1)
+                  setNames( gsub("crossval_pred_diag_", "", crx_files ) ) %>%
+                  setNames( gsub(".csv", "", names(.) ) ) %>%
+                  unlist %>% t %>% t %>% as.data.frame %>% 
+                  tibble::rownames_to_column(var = "species") %>%
+                  rename( rep_n = V1)
   mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
-    dplyr::select(species,dev0,dev1) %>%
-    unique %>%
-    mutate( model_climate = 0 ) %>%
-    mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
-    setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
+                  dplyr::select(species,dev0,dev1) %>%
+                  unique %>%
+                  mutate( model_climate = 0 ) %>%
+                  mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
+                  setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
   
   # best model by measure of fit (MOF)
   best_mod_by_mof <- function(mof){
     
-    lapply(mod_summ, function(x) arrange_(x, mof)) %>%
-      lapply(function(x) x[1,"model"]) %>%
-      unlist %>%
-      table
-    
+      out <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
+                lapply(function(x) x[1,"model"]) %>%
+                unlist %>%
+                table
   }
   best_mods <- lapply(c("mse","elpd"), best_mod_by_mof) %>%
-    setNames(c("mse","elpd"))
+                  setNames(c("mse","elpd"))
   
   # predictive accuracy by measure of fit
   pred_acc_by_mof <- function(mof){
     
-    tmp <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
-      lapply(function(x) x[1,c(mof,"model")]) 
+    if( mof == "mse"){
+      tmp <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
+                lapply(function(x) x[1,c(mof,"model")]) 
+    }
+    if( mof == "elpd"){
+      tmp <- lapply(mod_summ, function(x) x[order(x[,mof], decreasing=T),] ) %>%
+                lapply(function(x) x[1,c(mof,"model")]) 
+    }
     tmp <- Map(function(x,y) tibble::add_column(x, species = y, .before = 1), 
                tmp, names(tmp) )
     
@@ -113,24 +119,24 @@ summ_by_clim <- function(clim_var, response){
   
   # set up categories for summary graphs
   mod_climate <- Reduce(function(...) merge(...), pred_acc_l) %>%
-                    rename( rep_n = rep_n_mse) %>%
-                    left_join( spp_rep_yr ) %>%
-                    inner_join( categ ) %>%
-                    mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
-                    mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
-                    mutate( model_climate = as.numeric(model_climate)) %>%
-                    mutate( Ecoregion = as.factor(Ecoregion)) %>%
-                    mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
-                    mutate( Class = as.factor(Class) ) %>%
-                    mutate( OrganismType = as.factor(OrganismType) )
+    rename( rep_n = rep_n_mse) %>%
+    left_join( spp_rep_yr ) %>%
+    inner_join( categ ) %>%
+    mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
+    mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
+    mutate( model_climate = as.numeric(model_climate)) %>%
+    mutate( Ecoregion = as.factor(Ecoregion)) %>%
+    mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
+    mutate( Class = as.factor(Class) ) %>%
+    mutate( OrganismType = as.factor(OrganismType) )
   
   # best model by climate sampled --------------------------------------------------------------
   
   # climate info 
   spp_list      <- lambdas$SpeciesAuthor %>% 
-    unique %>% 
-    sort %>% 
-    .[-12] # what happened with Daphne_rodriguezii?!?
+                      unique %>% 
+                      sort %>% 
+                      .[-12] # what happened with Daphne_rodriguezii?!?
   
   # create proportion of observed climates
   clim_obs_wrapper <- function(spp_name, clim_var){
@@ -156,7 +162,7 @@ summ_by_clim <- function(clim_var, response){
   # means of the propotion of observed climatic variability *across sites*
   clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
   obs_clim_rng <- merge(mod_climate, clim_rng_m) %>%
-    mutate( clim_var = clim_var )
+                    mutate( clim_var = clim_var )
   
   return( obs_clim_rng )
   
@@ -203,7 +209,7 @@ spline_summ_tmp <- Reduce( function(...) rbind(...), spline_summ_l ) %>%
 # add information on replication, and climate sampled
 rep_clim_info   <- dplyr::select(mw_summ_df, species, clim_var, rep_n, rep_yr,
                                  prop_rang, prop_yrs,prop_var,prop_var_r, mean_dev, mean_clim ) %>%
-                      unique
+                        unique
 spline_summ_df  <- left_join( spline_summ_tmp, rep_clim_info )
 
 
@@ -236,6 +242,35 @@ legend("topright", color_plot$model_name, fill = color_plot$col,
 
 dev.off()
 
+# best models
+tiff(paste0("results/moving_windows/",response,"/best_mods_ELPD.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
+
+# set up barplot data frame
+best_mod_l  <- lapply( split(mw_summ_df$model_elpd, as.factor(mw_summ_df$clim_var) ),
+                       function(x) table(x) )
+best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>% 
+                  t %>% as.data.frame %>%
+                  tibble::add_column(model = rownames(.), .before = 1 ) %>%
+                  setNames( c("model","Air temperature","Precipitation") )
+
+# define which colors to plot
+color_df    <-  data.frame( model = c("ctrl1", "ctrl2", "expp", "gaus"),
+                            model_name = c("NULL", "2 yr clim", "Discrete", "Gaus"), 
+                            col   = c("black", "grey40", "grey", "white") )
+best_mod_df <- full_join( color_df, best_mod_tmp ) 
+
+plot_mat    <- as.matrix(best_mod_df[,4:5])
+barplot(plot_mat, beside=T, col = color_df$col, cex.names = 1.7)
+legend("topright", best_mod_df$model_name, fill = best_mod_df$col,
+       bty = "n", cex= 1.7)
+
+dev.off()
+
+
 
 # best models comparison: MSE vs. ELPD
 tiff(paste0("results/moving_windows/",response,"/best_mods_MSEvsELPD.tiff"),
@@ -244,6 +279,7 @@ tiff(paste0("results/moving_windows/",response,"/best_mods_MSEvsELPD.tiff"),
 par(mfrow=c(2,1), mar = c(2.5,3.2,1,0.5), mgp = c(2,0.7,0) ,
     cex.lab = 1.2)
 
+# data frames for plotting
 mse_elpd_t <- bind_rows( table(subset(mw_summ_df, clim_var == "airt")$model_mse),
                          table(subset(mw_summ_df, clim_var == "airt")$model_elpd) ) %>% 
                 t %>% as.data.frame %>%
@@ -257,11 +293,11 @@ mse_elpd_p <- bind_rows( table(subset(mw_summ_df, clim_var == "precip")$model_ms
 
 barplot(mse_elpd_t, beside=T, col = c("black", "grey40", "grey", "white"), 
         main = paste0("Ait temperature (",response,")"))
-legend("topleft", c("NULL", "24 Mon", "Expp", "Gaus"),
+legend("topright", c("NULL", "24 Mon", "Expp", "Gaus"),
        fill = c("black", "grey40", "grey", "white"),
        bty = "n")
-barplot(mse_elpd_p, beside=T, col = c("black", "grey40", "grey", "white"), 
-        main = paste0("Precipitation (",response,")"))
+barplot(mse_elpd_p, beside=T, col = c("black", "grey40", "grey","white"), 
+        main = paste0("Precipitation (",response,")") ) 
 
 dev.off()
 
