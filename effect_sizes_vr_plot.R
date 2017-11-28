@@ -147,12 +147,13 @@ means_df_clean <- subset(means_df_orig, species != "Eryngium_alpinum" &
 # add sensitivities and calculate sensitivity to climate
 means_df       <- means_df_clean %>% 
                     left_join( sens_df ) %>%
-                    mutate( clim_sens_raw = beta * sensitivity ) %>%
-                    mutate( clim_sens     = clim_sens_raw * boot::inv.logit(alpha) ) %>%
-                    mutate( clim_sens     = replace(clim_sens, 
-                                                    response == "fec", 
-                                                    clim_sens_raw[response == "fec"] * exp(alpha[response == "fec"])) ) %>%
-                    mutate( clim_sens_abs = abs(clim_sens) )
+                    mutate( clim_sens       = ( beta * exp(alpha) ) / ( (exp(alpha) +1)^2 ) ) %>%
+                    mutate( clim_sens       = replace(clim_sens, 
+                                                      response == "fec", 
+                                                      beta[response == "fec"] * exp(alpha[response == "fec"])) ) %>%
+                    mutate( clim_sens_abs = abs(clim_sens) ) %>%
+                    mutate( clim_sens_scale = clim_sens * sensitivity ) %>%
+                    mutate( clim_sens_scale_abs = abs(clim_sens_scale) )
 
 
 # plot beta by response variable --------------------------------------------------------
@@ -206,57 +207,58 @@ colors_df     <- dplyr::select(vr_df, species, col) %>% unique %>% arrange()
 
 # produce data frames
 vr_beta_prec_mat <- subset(vr_df, model == "ctrl2" & clim_var == "precip") %>%
-                      dplyr::select( species, response, clim_sens_abs) %>%
-                      spread( species, clim_sens_abs ) %>%
+                      dplyr::select( species, response, clim_sens_scale_abs) %>%
+                      spread( species, clim_sens_scale_abs ) %>%
                       .[c("response", colors_df$species)] %>%
                       mutate( response = as.factor(as.character(response)) )
 
 vr_beta_airt_mat <- subset(vr_df, model == "ctrl2" & clim_var == "airt") %>%
-                      dplyr::select( species, response, clim_sens_abs) %>%
-                      spread( species, clim_sens_abs ) %>%
+                      dplyr::select( species, response, clim_sens_scale_abs) %>%
+                      spread( species, clim_sens_scale_abs ) %>%
                       .[c("response", colors_df$species)] %>%
                       mutate( response = as.factor(as.character(response)) )
 
 
-# # slopes, by vital rate and species
-# tiff("results/moving_windows/clim_sens_by_spp_vr.tiff", 
-#      unit="in", width=6.3, height=3.5, res=400, compression="lzw")
-# 
-# par(mfrow=c(1,2), mar = c(2,2.5,1,1), mgp = c(1.5, 0.7,0) )
-# 
+# slopes, by vital rate and species
+tiff("results/moving_windows/clim_sens_by_spp_vr.tiff",
+     unit="in", width=6.3, height=3.5, res=400, compression="lzw")
+
+par(mfrow=c(1,2), mar = c(2,2.5,1,1), mgp = c(1.5, 0.7,0) )
+
 # # Air temperature
-# matplot(as.numeric(vr_beta_airt_mat[,1]), vr_beta_airt_mat[,-c(1,18)], 
-#         type = "l", lty = 1, lwd = 2,
-#         xlim = c(0.9, 3.1), ylim = c(0, 2), col = colors_df$col,
-#         xaxt="n", xlab = "", ylab = expression(italic(Sensitivity)*"  to Air Temperature"))
-# axis(1, at = c(1,2,3), labels=c("fecundity","growth", "survival") )
-# legend("topleft", c("Hemicryptophyte + Nanophanerophyte","Geophyte + Chamaephyte","Therophyte"),
-#        lty = 1, lwd = 2, col = c("blue", "brown", "green" ), bty = "n", cex = 0.7)
-# 
+matplot(as.numeric(vr_beta_airt_mat[,1]), vr_beta_airt_mat[,-c(1,18)],
+        type = "l", lty = 1, lwd = 2,
+        xlim = c(0.9, 3.1), ylim = c(0, 1), col = colors_df$col[-17],
+        xaxt="n", xlab = "", ylab = expression(italic(Sensitivity)*"  to Air Temperature"))
+axis(1, at = c(1,2,3), labels=c("fecundity","growth", "survival") )
+legend("topleft", c("Hemicryptophyte + Nanophanerophyte","Geophyte + Chamaephyte","Therophyte"),
+       lty = 1, lwd = 2, col = c("blue", "brown", "green" ), bty = "n", cex = 0.7)
+
 # # Precipitation
-# matplot(as.numeric(vr_beta_prec_mat[,1]), vr_beta_prec_mat[,-c(1,18)], 
-#         type = "l", lty = 1, lwd = 2,  
-#         xlim = c(0.9, 3.1), ylim = c(0, 2), col = colors_df$col,
-#         xaxt="n", xlab = "", ylab = expression(italic(Sensitivity)*"  to Precipitation") )
-# axis(1, at = c(1,2,3), labels=c("fecundity","growth", "survival") )
-# 
-# dev.off()
+matplot(as.numeric(vr_beta_prec_mat[,1]), vr_beta_prec_mat[,-c(1,18)],
+        type = "l", lty = 1, lwd = 2,
+        xlim = c(0.9, 3.1), ylim = c(0, 1), col = colors_df$col[-17],
+        xaxt="n", xlab = "", ylab = expression(italic(Sensitivity)*"  to Precipitation") )
+axis(1, at = c(1,2,3), labels=c("fecundity","growth", "survival") )
+
+dev.off()
 
 
-# tiff("results/moving_windows/sens_by_clim.tiff", 
-#      unit="in", width=6.3, height=6.3, res=400, compression="lzw")
-# 
-# sens_plot <- data.frame( AirTemperature = stack(vr_beta_airt_mat[,-1])[,1], 
-#                          Precipitation = stack(vr_beta_prec_mat[,-1])[,1] ) %>%
-#                 gather(clim_var, sens, AirTemperature, Precipitation)
-# 
-# par(mfrow=c(1,1), mar = c(2.5,3.5,0.1,0.1), mgp = c(2,0.7,0) )
-# boxplot(sens ~ clim_var, data = subset(sens_plot, sens < 12),
-#         names = c("ciao", "salve"),
-#         ylab = "Sensitivity", cex.lab = 2, xaxt = "n")
-# axis(1, at = c(1,2), c("Air temperature", "Precipitation"), cex.axis = 1.5)
-# 
-# dev.off()
+tiff("results/moving_windows/sens_by_clim.tiff",
+     unit="in", width=6.3, height=6.3, res=400, compression="lzw")
+
+sens_plot <- data.frame( AirTemperature = stack(vr_beta_airt_mat[,-1])[,1],
+                         Precipitation  = stack(vr_beta_prec_mat[,-1])[,1] ) %>%
+                gather(clim_var, sens, AirTemperature, Precipitation)
+
+par(mfrow=c(1,1), mar = c(2.5,3.5,0.1,0.1), mgp = c(2,0.7,0) )
+boxplot(sens ~ clim_var, data = subset(sens_plot, sens < 12),
+        names = c("ciao", "salve"),
+        ylab = "Sensitivity", cex.lab = 2, xaxt = "n")
+axis(1, at = c(1,2), c("Air temperature", "Precipitation"), cex.axis = 1.5)
+
+dev.off()
+
 
 # slopes, by vital rate 
 tiff("results/moving_windows/slope_by_response.tiff", 
@@ -282,9 +284,9 @@ tiff("results/moving_windows/stzed_slope_by_response.tiff",
 
 par(mfrow=c(2,1), mar = c(2,2.5,1,1), mgp = c(1.5, 0.5,0) )
 
-boxplot(clim_sens_abs ~ response, subset(means_df, clim_var == "airt" & model == "ctrl2"),
+boxplot(clim_sens ~ response, subset(means_df, clim_var == "airt" & model == "ctrl2"),
         main = "Air temperature", ylab = expression("Scaled "*beta*" value") )
-boxplot(clim_sens_abs ~ response, subset(means_df, clim_var == "precip" & model == "ctrl2" & clim_sens_abs < 12),
+boxplot(abs(clim_sens) ~ response, subset(means_df, clim_var == "precip" & model == "ctrl2" & abs(clim_sens) < 5),
         main = "Precipitation", ylab = expression("Scaled "*beta*" value") )
 
 dev.off()
@@ -325,8 +327,8 @@ tiff("results/moving_windows/slope_by_vr_sens.tiff",
      unit="in", width=6.3, height=6.3, res=400, compression="lzw")
 
 par(mfrow = c(1,1) , mar = c(3,3,0.2,0.2), mgp = c(2,1,0) )
-plot( beta_abs ~ sensitivity, data=beta_vs_sens, pch = 16,
-      ylab = expression("climate effect ("*beta*")"), col = as.factor(beta_vs_sens$response),
+plot( clim_sens_abs ~ sensitivity, data=beta_vs_sens, pch = 16,
+      ylab = expression("climate sensitivity"), col = as.factor(beta_vs_sens$response),
       xlab = expression("Sensitivity of "*lambda*" to vital rate") )
 legend("topright", c("fecundity", "growth", "survival"), 
        col = c(1:3), pch = 16, bty = "n")
@@ -334,43 +336,44 @@ legend("topright", c("fecundity", "growth", "survival"),
 dev.off()
 
 
-tiff("results/moving_windows/slope_by_vr_sens_log.tiff", 
-     unit="in", width=4, height=6.3, res=400, compression="lzw")
-
-par(mfrow = c(2,1) , mar = c(3,3,1,0.2), mgp = c(2,1,0) )
-plot( log(beta_abs) ~ log(sensitivity), data= bvs_airt, pch = 16,
-      ylab = expression("log[climate effect ("*beta*")]"), col = as.factor(bvs_airt$response),
-      xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
-      main = "Air temperature")
-legend("topright", c("fecundity", "growth", "survival"), 
-       col = c(1:3), pch = 16, bty = "n")
-
-plot( log(beta_abs) ~ log(sensitivity), data= bvs_prec, pch = 16,
-      ylab = expression("log[climate effect ("*beta*")]"), col = as.factor(bvs_prec$response),
-      xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
-      main = "Precipitation")
-
-dev.off()
-
-
-
 tiff("results/moving_windows/slope_by_vr_sens(stdz)_log.tiff", 
      unit="in", width=4, height=6.3, res=400, compression="lzw")
 
 par(mfrow = c(2,1) , mar = c(3,3,1,0.2), mgp = c(2,1,0) )
 plot( log(clim_sens_abs) ~ log(sensitivity), data= bvs_airt, pch = 16,
-      ylab = expression("log[standardized climate effect ("*beta*")]"), col = as.factor(bvs_airt$response),
+      ylab = expression("log[Sensitivity to temperature]"), col = as.factor(bvs_airt$response),
       xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
       main = "Air temperature")
-legend("topleft", c("fecundity", "growth", "survival"), 
+legend("bottomleft", c("fecundity", "growth", "survival"), 
        col = c(1:3), pch = 16, bty = "n")
 
 plot( log(clim_sens_abs) ~ log(sensitivity), data= bvs_prec, pch = 16,
-      ylab = expression("log[standardized climate effect ("*beta*")]"), col = as.factor(bvs_prec$response),
+      ylab = expression("log[Sensitivity to precipitation]"), col = as.factor(bvs_prec$response),
       xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
       main = "Precipitation")
 
 dev.off()
+
+
+# tiff("results/moving_windows/slope_by_vr_sens_log.tiff", 
+#      unit="in", width=4, height=6.3, res=400, compression="lzw")
+# 
+# par(mfrow = c(2,1) , mar = c(3,3,1,0.2), mgp = c(2,1,0) )
+# plot( log(beta_abs) ~ log(sensitivity), data= bvs_airt, pch = 16,
+#       ylab = expression("log[climate effect ("*beta*")]"), col = as.factor(bvs_airt$response),
+#       xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
+#       main = "Air temperature")
+# legend("bottomleft", c("fecundity", "growth", "survival"), 
+#        col = c(1:3), pch = 16, bty = "n")
+# 
+# plot( log(beta_abs) ~ log(sensitivity), data= bvs_prec, pch = 16,
+#       ylab = expression("log[climate effect ("*beta*")]"), col = as.factor(bvs_prec$response),
+#       xlab = expression("log[Sensitivity of "*lambda*" to vital rate]"),
+#       main = "Precipitation")
+# 
+# dev.off()
+
+
 
 
 
