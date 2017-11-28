@@ -16,7 +16,7 @@
 
 module load R/3.3.1-1
 
-Rscript array_test.R \
+Rscript array_job.R \
 	"$SGE_TASK_ID" \
 	"/data/idiv_knight/sApropos/" \
 	"/work/$USER/$JOB_NAME-$JOB_ID-$SGE_TASK_ID"
