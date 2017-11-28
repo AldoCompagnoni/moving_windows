@@ -155,7 +155,6 @@ col_df <- data.frame( species = names(mean_airt)[-c(1,2)]) %>%
                                    GrowthFormRaunkiaer == "Chamaephyte",
                                    "brown" ) )
 
-
 # sensitivity by vr and reproductive stage
 tiff("results/moving_windows/sens_by_repr_vr.tiff",
      unit="in", width=4.5, height=6.3, res=400, compression="lzw")
@@ -175,3 +174,12 @@ axis(1, at = c(1,2,3,4),
      labels = c("Surv_Pre","Grow_Pre","Surv_Rep","Grow_Rep") )
 
 dev.off()
+
+
+# boxplot of absolute effect sizes
+means_boxp <- inner_join(means_all, sens_ssd) %>%
+                mutate( clim_sens        = ( beta * exp(alpha) ) / ( (exp(alpha) +1)^2 ) ) %>%
+                mutate( clim_sens        = abs(clim_sens) ) %>%
+                mutate( clim_sens_scaled = sensitivity * clim_sens) 
+
+boxplot(clim_sens_scaled ~ clim_var, data=means_boxp)
