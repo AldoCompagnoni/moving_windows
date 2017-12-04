@@ -152,9 +152,9 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   }
   
   # calculate monthly precipitation values
-  precip_l  <- lapply(years, clim_back, m_obs, long_out)
-  x_precip  <- year_by_month_mat(precip_l, years)
-  return(x_precip)
+  clim_x_l  <- lapply(years, clim_back, m_obs, long_out)
+  x_clim    <- year_by_month_mat(clim_x_l, years)
+  return(x_clim)
   
 }
 
