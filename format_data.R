@@ -145,7 +145,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   }
 
   # climate data in matrix form 
-  mat_form <- function(dat, years){
+  year_by_month_mat <- function(dat, years){
     do.call(rbind, dat) %>% 
       as.data.frame %>%
       tibble::add_column(year = years, .before=1)
@@ -153,7 +153,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   
   # calculate monthly precipitation values
   precip_l  <- lapply(years, clim_back, m_obs, long_out)
-  x_precip  <- mat_form(precip_l, years)
+  x_precip  <- year_by_month_mat(precip_l, years)
   return(x_precip)
   
 }
