@@ -30,7 +30,7 @@ format_species <- function(spp_name, lam, response = "lambda"){
 }
 
 # separate climate variables by population 
-clim_list <- function(spp_name, clim, lam_spp){#clim_var, 
+clim_list <- function(spp_name, clim, lam_spp){ # clim_var, 
  
   clim_spp  <- clim %>%
                   subset( species == spp_name) %>%
@@ -63,33 +63,33 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
                   separate_(col=".",into=c("year1","month1","day1"),sep="-") %>%
                   bind_cols(clim_x) %>%
                   dplyr::select(-year,-day) %>%
-                  setNames( c("year", "month", "day", "species", "ppt") )
+                  setNames( c("year", "month", "day", "species", "value") )
     
   # # if climate_var airt, then do means, otherwise, do sums! 
   if( clim_var == "airt"){
     clim_m  <- clim_d %>%
       group_by(year, month) %>%
-      summarise( ppt = mean(ppt, na.rm=T) )  %>%
-      spread( month, ppt ) %>%
+      summarise( value = mean(value, na.rm=T) )  %>%
+      spread( month, value ) %>%
       setNames( c("year",month.abb) ) %>%            
       as.data.frame()
   } else{
     clim_m   <- clim_d %>%
       group_by(year, month) %>%
-      summarise( ppt = sum(ppt, na.rm=T) )  %>%
-      spread( month, ppt ) %>%
+      summarise( value = sum(value, na.rm=T) )  %>%
+      spread( month, value ) %>%
       setNames( c("year",month.abb) ) %>%            
-      as.data.frame() #%>%
+      as.data.frame()
   }
 
   # if st_dev == T, this overrides the above conditional statements
   if(st_dev == T){
     clim_m   <- clim_d %>%
       group_by(year, month) %>%
-      summarise( ppt = sd(ppt, na.rm=T) )  %>%
-      spread( month, ppt ) %>%
+      summarise( value = sd(value, na.rm=T) )  %>%
+      spread( month, value ) %>%
       setNames( c("year",month.abb) ) %>%            
-      as.data.frame() #%>%
+      as.data.frame()
   }
   
   # throw error
@@ -101,16 +101,20 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
   if( clim_var != "gdd" ){
     d_prec   <- apply(clim_m[,-1], 2, FUN = scale, center = T, scale = T) %>%
                   as.data.frame() %>%
-                  bind_cols( clim_m[,"year",drop=F] ) %>%
+                  bind_cols( clim_m[,"year", drop=F] ) %>%
                   dplyr::select( c("year", month.abb) )
-  }else{
+  } else{
     d_prec   <- clim_m
   }
+  
+  # Present 
+  nans_n <- d_prec[,-1] %>% as.matrix %>% is.nan %>% sum
+  if(nans_n > 0) print( "Warning: NANs present in climate predictor" )
   
   # Make NaNs 0
   for(c_i in 1:ncol(d_prec) ){
     d_prec[,c_i] <- replace(d_prec[,c_i], is.nan(d_prec[,c_i]), 0)
-  } 
+  }
   
   return(d_prec)
   
@@ -128,9 +132,9 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   long_out  <- clim_detr %>%
                   subset(year < (yr_range[2]+1) & year > (yr_range[1] - 6) ) %>%
                   gather(month, precip, Jan:Dec) %>%
-                  setNames(c("year", "month", "clim_value")) %>% 
+                  setNames(c("year", "month", "clim_value") ) %>% 
                   mutate(month_num = factor(month, levels = month.abb) ) %>% 
-                  mutate(month_num = as.numeric(month_num)) %>% 
+                  mutate(month_num = as.numeric(month_num) ) %>% 
                   arrange(year, month_num)
   
   # select temporal extent
@@ -141,7 +145,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   }
 
   # climate data in matrix form 
-  mat_form<- function(dat, years){
+  mat_form <- function(dat, years){
     do.call(rbind, dat) %>% 
       as.data.frame %>%
       tibble::add_column(year = years, .before=1)
