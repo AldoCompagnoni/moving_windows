@@ -14,8 +14,8 @@ rstan_options( auto_write = TRUE )
 options( mc.cores = parallel::detectCores() )
 
 # climate predictor, response, months back, max. number of knots
-response  <- "react_fsa"
-clim_var  <- "precip"
+response  <- "SurvSSDPreRep"
+clim_var  <- "airt"
 m_back    <- 24    
 st_dev    <- FALSE
 
@@ -28,81 +28,82 @@ clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactor
 month_add <- m_info %>%
               mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
               dplyr::select(SpeciesAuthor, MatrixEndMonth)
-lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%
+resp_add  <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%
               dplyr::select(-MatrixEndMonth) %>%
               inner_join(month_add)
-lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
-lambdas   <- bind_rows(lam_min, lam_add) %>%
+resp_min  <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
+resp_df   <- bind_rows(resp_min, resp_add) %>%
               subset( !is.na(MatrixEndMonth) ) #%>%
               #arrange( SpeciesAuthor )
-spp       <- lambdas$SpeciesAuthor %>% unique
+spp       <- resp_df$SpeciesAuthor %>% unique
 
 
 # format data --------------------------------------------------------------------------------------
 
 # set up model "family" based on response
-if(response == "surv" | response == "grow")       family = "beta" 
-if(response == "fec")                             family = "gamma"
-if(response == "rho" | response == "react_fsa" )  family = "gamma"
-if(response == "log_lambda")                      family = "normal"
+if( response == "surv" | response == "grow" )             family = "beta" 
+if( response == "fec" )                                   family = "gamma"
+if( grepl("PreRep", response) | grepl("Rep", response) )  family = "beta"
+if( response == "rho" | response == "react_fsa" )         family = "gamma"
+if( response == "log_lambda")                             family = "normal"
 
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 1
+ii            <- 14
 spp_name      <- spp[ii]
 
 # lambda data
-spp_lambdas   <- format_species(spp_name, lambdas, response)
+spp_response  <- format_species(spp_name, resp_df, response)
 
 # climate data
-clim_separate <- clim_list(spp_name, clim, spp_lambdas)
+clim_separate <- clim_list(spp_name, clim, spp_response)
 clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var, st_dev)
-clim_mats     <- Map(clim_long, clim_detrnded, spp_lambdas, m_back)
+clim_mats     <- Map(clim_long, clim_detrnded, spp_response, m_back)
 
 # model data
-mod_data          <- lambda_plus_clim(spp_lambdas, clim_mats, response)
+mod_data          <- lambda_plus_clim(spp_response, clim_mats, response)
 mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
 
 # throw error if not enough data
-if( nrow(mod_data$lambdas) < 6 ) stop( paste0("not enough temporal replication for '", 
+if( nrow(mod_data$resp) < 6 ) stop( paste0("not enough temporal replication for '", 
                                               spp_name, "' and response variable '" , response, "'") )
 
 # Transform response variables (if needed) ------------------------------------------------------------------
 
 # transform survival/growth - ONLY if less than 30% data points are 1/0
-if(response == "surv" | response == "grow"){
+if( response == "surv" | response == "grow" | grepl("PreRep", response) | grepl("Rep", response) ){
   
-  raw_x <- mod_data$lambdas[,response]
+  raw_x <- mod_data$resp[,response]
   pc_1  <- sum( raw_x == 1 ) / length(raw_x)
   pc_0  <- sum( raw_x == 0 ) / length(raw_x)
   
   # for survival
-  if(response == "surv" & pc_1 < 0.3 ){
+  if( grepl("surv", response, ignore.case = T) & pc_1 < 0.3 ){
     n     <- length(raw_x)
     new_x <- ( raw_x*(n - 1) + 0.5 ) / n
-    mod_data$lambdas[,response] <- new_x
+    mod_data$resp[,response] <- new_x
   }
   
   # for growth
-  if(response == "grow" & pc_0 < 0.3 ){
+  if( grepl("grow", response, ignore.case = T) & pc_0 < 0.3 ){
     n     <- length(raw_x)
     new_x <- ( raw_x*(n - 1) + 0.5 ) / n
-    mod_data$lambdas[,response] <- new_x
+    mod_data$resp[,response] <- new_x
   }
   
 }
 
 # avoid absolute zeros
-if(response == "fec"){
+if( response == "fec" ){
   # transform from [0, infinity) to (0, infinity) 
   # I add quantity 2 orders of mag. lower than lowest obs value.
-  mod_data$lambdas[,response] <- mod_data$lambdas[,response] + 1.54e-12 
+  mod_data$resp[,response] <- mod_data$resp[,response] + 1.54e-12 
 } 
 
-if(response == "rho" | response == "react_fsa" ){
+if( response == "rho" | response == "react_fsa" ){
   # bound responses to (0,infinity) instead of [1, infinity) 
-  mod_data$lambdas[,response] <- mod_data$lambdas[,response] - 0.99999
+  mod_data$resp[,response] <- mod_data$resp[,response] - 0.99999
 } 
 
 
@@ -112,7 +113,7 @@ if(response == "rho" | response == "react_fsa" ){
 dat_stan <- list(
   n_time = nrow(mod_data$climate),
   n_lag  = ncol(mod_data$climate),
-  y      = mod_data$lambdas[,response],
+  y      = mod_data$resp[,response],
   clim   = mod_data$climate,
   clim_means = rowMeans(mod_data$climate),
   expp_beta = expp_beta
@@ -263,16 +264,16 @@ waic_df   <- loo::compare(waic_l$waic_gaus, waic_l$waic_expp, waic_l$waic_ctrl1,
 CrossVal <- function(i, mod_data, response) {       # i is index for row to leave out
   
   # identify years
-  uniq_yr           <- mod_data$lambdas$year %>% unique 
-  test_i            <- which(mod_data$lambdas$year == uniq_yr[i])
+  uniq_yr           <- mod_data$resp$year %>% unique 
+  test_i            <- which(mod_data$resp$year == uniq_yr[i])
   
   # put all in matrix form 
   x_clim            <- mod_data$climate
   x_clim_means      <- rowMeans(mod_data$climate)   # climate averages over entire window (for control model #2)
   
   # response variable
-  y_train           <- mod_data$lambdas[-test_i, response]
-  y_test            <- mod_data$lambdas[test_i, response]
+  y_train           <- mod_data$resp[-test_i, response]
+  y_test            <- mod_data$resp[test_i, response]
   
   # climate variable
   clim_train        <- x_clim[-test_i,]
@@ -376,10 +377,10 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   gaus_expp   <- crossval_mods[c("gaus","expp")]
   diagnost_l  <- Map(diagnostics, gaus_expp, names(gaus_expp))
   diagnost_df <- do.call(cbind, diagnost_l) %>%
-                    bind_cols( unique( dplyr::select(mod_data$lambdas[test_i,],year) ) )
+                    bind_cols( unique( dplyr::select(mod_data$resp[test_i,],year) ) )
   
   # function
-  pred_elpd_df<- mod_data$lambdas[test_i,] %>%
+  pred_elpd_df<- mod_data$resp[test_i,] %>%
                     mutate( # predictions
                             gaus_pred  = mod_preds$gaus,
                             expp_pred  = mod_preds$expp,
@@ -405,7 +406,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
 }
 
 # spp-specific cross validation
-year_inds   <- seq_along(unique(mod_data$lambdas$year))
+year_inds   <- seq_along(unique(mod_data$resp$year))
 cxval_res   <- lapply( year_inds, CrossVal, mod_data, response)
 cxval_pred  <- do.call(rbind, cxval_res) 
 
@@ -415,10 +416,10 @@ cxval_pred  <- do.call(rbind, cxval_res)
 pred_perform <- function(x, mod_data, response, type){
   
   if( type == "mse"){
-    res   <- (x - mod_data$lambdas[,response])^2 %>% mean
+    res   <- (x - mod_data$resp[,response])^2 %>% mean
   }
   if(type == "deviance"){
-    res   <-calc.deviance(x, mod_data$lambdas[,response], 
+    res   <-calc.deviance(x, mod_data$resp[,response], 
                           weights = rep(1, length(x) ),  
                           family="gaussian", calc.mean = TRUE)
   }
