@@ -6,12 +6,19 @@ library(magrittr)
 library(testthat)
 options(stringsAsFactors = F )
 
-response      <- "fec"
+response      <- "surv"
 m_back        <- 24
 interval      <- "5"
 
+# pipe-able Reduce_rbind function 
+rbind_l     <- function(df_list){  Reduce(function(...) rbind(...), df_list) }
+
 # summarize moving windows results by climate variable
-summ_by_clim <- function(clim_var, response, interval){
+summ_by_clim <- function(ii){
+  
+  clim_var <- input_df$clim_var[ii]
+  response <- input_df$response[ii]
+  interval <- input_df$interval[ii]
   
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("all_demog_6tr.csv", stringsAsFactors = F) %>%
@@ -74,17 +81,6 @@ summ_by_clim <- function(clim_var, response, interval){
                     setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
   }
   
-  # best model by measure of fit (MOF)
-  best_mod_by_mof <- function(mof){
-    
-      out <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
-                lapply(function(x) x[1,"model"]) %>%
-                unlist %>%
-                table
-  }
-  best_mods <- lapply(c("mse","elpd"), best_mod_by_mof) %>%
-                  setNames(c("mse","elpd"))
-  
   # predictive accuracy by measure of fit
   pred_acc_by_mof <- function(mof){
     
@@ -106,6 +102,9 @@ summ_by_clim <- function(clim_var, response, interval){
   }
   pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "elpd") )
   
+  # concervence information
+  conver_info <- function()
+  
   # replication in years
   rep_yr <- function(spp_name){
     
@@ -116,13 +115,17 @@ summ_by_clim <- function(clim_var, response, interval){
                 rep_yr  = spp_yr)
     
   }
-  spp_rep_yr_l  <- lapply(unique(lambdas$SpeciesAuthor), rep_yr) 
-  spp_rep_yr    <- Reduce(function(...) rbind(...), spp_rep_yr_l)
+  spp_rep_yr  <- lapply(unique(lambdas$SpeciesAuthor), rep_yr) %>% rbind_l
+  
+  # convergence info
+  converg_df  <- Map(function(x,y) dplyr::select(x,model,rhat_high) %>% mutate( species = y), 
+                     mod_summ, names(mod_summ) ) %>% rbind_l
   
   # set up categories for summary graphs
   mod_climate <- Reduce(function(...) merge(...), pred_acc_l) %>%
                     rename( rep_n = rep_n_mse) %>%
                     left_join( spp_rep_yr ) %>%
+                    left_join(converg_df) %>%
                     inner_join( categ ) %>%
                     mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
                     mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
@@ -130,7 +133,9 @@ summ_by_clim <- function(clim_var, response, interval){
                     mutate( Ecoregion = as.factor(Ecoregion)) %>%
                     mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
                     mutate( Class = as.factor(Class) ) %>%
-                    mutate( OrganismType = as.factor(OrganismType) )
+                    mutate( OrganismType = as.factor(OrganismType) ) %>%
+                    mutate( response_var = response,
+                            clim_variable = clim_var )
   
   return(mod_climate)
   
@@ -148,14 +153,23 @@ summ_by_clim <- function(clim_var, response, interval){
 #                   merge( data.frame( clim_var = c("precip", "airt",  "soilmoist"),
 #                                      color    = c("blue", "red", "brown") ) ) %>%
 #                   mutate(method = "mov_win")
-mw_summ_l   <- lapply(c("precip", "airt"), summ_by_clim, response, interval)
-# Also: color code the data frame 
-mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
-                  merge( data.frame( clim_var = c("precip", "airt"),
-                                     color    = c("blue", "red") ) ) %>%
+input_df    <- expand.grid( clim_var = c("precip","airt"),
+                            response = c("log_lambda","surv","grow","fec"),
+                            interval = "5" )
+
+# ALL model information
+mw_summ_df  <- lapply(1:nrow(input_df), summ_by_clim) %>%
+                  rbind_l %>%
                   mutate(method = "mov_win")
 
-
+# convergence issues
+mw_summ_df %>% 
+  subset(model=="gaus") %>% 
+  subset( rhat_high > 0) %>% 
+  group_by(clim_variable, response_var) %>%
+  summarise( convergence_issues = n())
+                  
+                  
 # add splines to the mix
 read_spline_summ <- function(clim_var, m_back){
   return(
