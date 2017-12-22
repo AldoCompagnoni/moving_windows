@@ -1,6 +1,6 @@
 # produce summary graphs
 setwd("C:/cloud/MEGA/projects/sAPROPOS/")
-source("C:/CODE/moving_windows/format_data.R")
+source("C:/CODE/moving_windows/format_data_5.R")
 library(tidyverse)
 library(magrittr)
 library(testthat)
@@ -8,10 +8,10 @@ options(stringsAsFactors = F )
 
 response      <- "fec"
 m_back        <- 24
-
+interval      <- "5"
 
 # summarize moving windows results by climate variable
-summ_by_clim <- function(clim_var, response){
+summ_by_clim <- function(clim_var, response, interval){
   
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("all_demog_6tr.csv", stringsAsFactors = F) %>%
@@ -53,7 +53,7 @@ summ_by_clim <- function(clim_var, response){
                   unique
   
   # summary info ----------------------------------------------------------------------------
-  res_folder<- paste0("results/moving_windows/",response,"/",clim_var) 
+  res_folder<- paste0("results/moving_windows/",response,"/",clim_var,interval) 
   sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
   crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
   mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
@@ -65,12 +65,14 @@ summ_by_clim <- function(clim_var, response){
                   unlist %>% t %>% t %>% as.data.frame %>% 
                   tibble::rownames_to_column(var = "species") %>%
                   rename( rep_n = V1)
-  mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
-                  dplyr::select(species,dev0,dev1) %>%
-                  unique %>%
-                  mutate( model_climate = 0 ) %>%
-                  mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
-                  setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
+  if( clim_var != "soilmoist"){
+    mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
+                    dplyr::select(species,dev0,dev1) %>%
+                    unique %>%
+                    mutate( model_climate = 0 ) %>%
+                    mutate( model_climate = replace( model_climate, which(dev0 > dev1), 1) ) %>%
+                    setNames( c("species", "dev0_spline", "dev1spline", "model_climate_spline") )
+  }
   
   # best model by measure of fit (MOF)
   best_mod_by_mof <- function(mof){
@@ -119,52 +121,18 @@ summ_by_clim <- function(clim_var, response){
   
   # set up categories for summary graphs
   mod_climate <- Reduce(function(...) merge(...), pred_acc_l) %>%
-    rename( rep_n = rep_n_mse) %>%
-    left_join( spp_rep_yr ) %>%
-    inner_join( categ ) %>%
-    mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
-    mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
-    mutate( model_climate = as.numeric(model_climate)) %>%
-    mutate( Ecoregion = as.factor(Ecoregion)) %>%
-    mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
-    mutate( Class = as.factor(Class) ) %>%
-    mutate( OrganismType = as.factor(OrganismType) )
+                    rename( rep_n = rep_n_mse) %>%
+                    left_join( spp_rep_yr ) %>%
+                    inner_join( categ ) %>%
+                    mutate( model_climate = sub("ctrl1", "0", model_mse)) %>%
+                    mutate( model_climate = sub("ctrl2|expp|gaus", "1", model_climate)) %>%
+                    mutate( model_climate = as.numeric(model_climate)) %>%
+                    mutate( Ecoregion = as.factor(Ecoregion)) %>%
+                    mutate( DicotMonoc = as.factor(DicotMonoc)) %>%
+                    mutate( Class = as.factor(Class) ) %>%
+                    mutate( OrganismType = as.factor(OrganismType) )
   
-  # best model by climate sampled --------------------------------------------------------------
-  
-  # climate info 
-  spp_list      <- lambdas$SpeciesAuthor %>% 
-                      unique %>% 
-                      sort %>% 
-                      .[-12] # what happened with Daphne_rodriguezii?!?
-  
-  # create proportion of observed climates
-  clim_obs_wrapper <- function(spp_name, clim_var){
-    
-    # lambda data
-    spp_lambdas   <- format_species(spp_name, lambdas)
-    
-    # climate data
-    clim_separate <- clim_list(spp_name, clim, spp_lambdas)
-    
-    # test
-    expect_equal(length(spp_lambdas), length(clim_separate) )
-    
-    # climate ranges
-    clim_rng      <- Map(observed_clim_range, clim_separate, spp_lambdas, spp_name, clim_var)
-    return(clim_rng)
-    
-  }
-  # information on observed climatic ranges
-  clim_rng_l_l <- lapply(spp_list, clim_obs_wrapper, clim_var)
-  clim_rng_l   <- lapply(clim_rng_l_l, function(x) Reduce(function(...) rbind(...), x))
-  clim_rng_df  <- Reduce(function(...) rbind(...), clim_rng_l)
-  # means of the propotion of observed climatic variability *across sites*
-  clim_rng_m   <- clim_rng_df %>% group_by(species) %>% summarise_all( mean )
-  obs_clim_rng <- merge(mod_climate, clim_rng_m) %>%
-                    mutate( clim_var = clim_var )
-  
-  return( obs_clim_rng )
+  return(mod_climate)
   
 }
 # # put it all together
@@ -175,7 +143,12 @@ summ_by_clim <- function(clim_var, response){
 #                                      color    = c("blue", "orange", "red", "green") ) ) %>%
 #                   mutate(method = "mov_win")
 # put it all together
-mw_summ_l   <- lapply(c("precip", "airt"), summ_by_clim, response)
+# mw_summ_l   <- lapply(c("precip", "airt", "soilmoist"), summ_by_clim, response)
+# mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
+#                   merge( data.frame( clim_var = c("precip", "airt",  "soilmoist"),
+#                                      color    = c("blue", "red", "brown") ) ) %>%
+#                   mutate(method = "mov_win")
+mw_summ_l   <- lapply(c("precip", "airt"), summ_by_clim, response, interval)
 # Also: color code the data frame 
 mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
                   merge( data.frame( clim_var = c("precip", "airt"),
@@ -216,7 +189,7 @@ spline_summ_df  <- left_join( spline_summ_tmp, rep_clim_info )
 # summary MOVING WINDOWS plots ----------------------------------------------------------------------------------
 
 # best models
-tiff(paste0("results/moving_windows/",response,"/best_mods.tiff"),
+tiff(paste0("results/moving_windows/",response,"/best_mods",interval,".tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
@@ -226,54 +199,60 @@ par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
 best_mod_l  <- lapply( split(mw_summ_df$model_mse, as.factor(mw_summ_df$clim_var) ),
                        function(x) table(x) )
 best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
-
+#best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t %>% t 
 
 # define which colors to plot
-color_df    <-  data.frame( model = c("ctrl1", "ctrl2", "expp", "gaus"),
-                            model_name = c("NULL", "24 Mon", "Expp", "Gaus"), 
-                            col   = c("black", "grey40", "grey", "white") )
-color_plot  <- left_join( data.frame(model = rownames(best_mod_df) ), 
+color_df    <-  data.frame( model      = c("ctrl1", "ctrl2",  "expp", "gaus"),
+                            model_name = c("NULL",  "24 Mon", "Expp", "Gaus"), 
+                            col        = c("black", "grey40", "grey", "white") )
+color_plot  <- left_join( data.frame(model = rownames(best_mod_df) ),
                           color_df )
 
-colnames(best_mod_df) <- c("Air temp.","Precipitation")
-barplot(best_mod_df, beside=T, col = color_plot$col )
+#colnames(best_mod_df) <- c("Air temp.")
+colnames(best_mod_df) <- c("Air temperature","Precipitation")
+barplot(best_mod_df, beside=T, col = color_plot$col, cex.names = 1.3)
 legend("topright", color_plot$model_name, fill = color_plot$col,
        bty = "n")
 
 dev.off()
 
+
 # best models
-tiff(paste0("results/moving_windows/",response,"/best_mods_ELPD.tiff"),
+tiff(paste0("results/moving_windows/",response,"/best_mods_ELPD",interval,".tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
-    cex.lab = 1.2)
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 # set up barplot data frame
 best_mod_l  <- lapply( split(mw_summ_df$model_elpd, as.factor(mw_summ_df$clim_var) ),
                        function(x) table(x) )
-best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>% 
+best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>%
                   t %>% as.data.frame %>%
                   tibble::add_column(model = rownames(.), .before = 1 ) %>%
                   setNames( c("model","Air temperature","Precipitation") )
+# best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>% t %>% t %>%
+#                   as.data.frame %>%
+#                   rename(model = x, airt = Freq) %>%
+#                   select(-Var2)
 
 # define which colors to plot
-color_df    <-  data.frame( model = c("ctrl1", "ctrl2", "expp", "gaus"),
-                            model_name = c("NULL", "2 yr clim", "Discrete", "Gaus"), 
-                            col   = c("black", "grey40", "grey", "white") )
-best_mod_df <- full_join( color_df, best_mod_tmp ) 
+color_df    <-  data.frame( model      = c("ctrl1", "ctrl2",     "expp", "gaus"),
+                            model_name = c("NULL",  "2 yr clim", "Discrete", "Gaus"),
+                            col        = c("black", "grey40",    "grey", "white") )
+best_mod_df <-  full_join( color_df, best_mod_tmp )
 
-plot_mat    <- as.matrix(best_mod_df[,4:5])
-barplot(plot_mat, beside=T, col = color_df$col, cex.names = 1.7)
+# plot_mat    <- as.matrix(best_mod_df[,c("airt")])
+plot_mat    <- as.matrix(best_mod_df[,c("Air temperature","Precipitation")])
+barplot(plot_mat, beside=T, col = color_df$col, cex.names = 1.3)
 legend("topright", best_mod_df$model_name, fill = best_mod_df$col,
-       bty = "n", cex= 1.7)
+       bty = "n", cex= 1)
 
 dev.off()
 
 
 
 # best models comparison: MSE vs. ELPD
-tiff(paste0("results/moving_windows/",response,"/best_mods_MSEvsELPD.tiff"),
+tiff(paste0("results/moving_windows/",response,"/best_mods_MSEvsELPD",interval,".tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(2,1), mar = c(2.5,3.2,1,0.5), mgp = c(2,0.7,0) ,
