@@ -33,7 +33,7 @@ format_species <- function(spp_name, lam, response = "lambda"){
 clim_list <- function(spp_name, clim, lam_spp){ # clim_var, 
  
   clim_spp  <- clim %>%
-                  subset( species == spp_name) %>%
+                  subset( species == spp_name ) %>%
                   mutate( population = as.factor(population) ) 
                   
   if( !(spp_name %in% Dalgleish_spp) ){
@@ -66,7 +66,7 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
                   setNames( c("year", "month", "day", "species", "value") )
     
   # # if climate_var airt, then do means, otherwise, do sums! 
-  if( clim_var == "airt"){
+  if( clim_var == "airt" | clim_var == "soilmoist" ){
     clim_m  <- clim_d %>%
       group_by(year, month) %>%
       summarise( value = mean(value, na.rm=T) )  %>%
@@ -93,7 +93,7 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
   }
   
   # throw error
-  if( !any( clim_var %in% c("precip","pet","airt","gdd")) ) {
+  if( !any( clim_var %in% c("precip","pet","airt","gdd","soilmoist")) ) {
     stop( paste0(clim_var," is not a supported varible") ) 
   }
   
@@ -184,27 +184,18 @@ lambda_plus_clim <- function(lambdas_l, clim_mat_l, response = "lambda"){
     
   }
   
-  # if( response == "lambda"){
-  #   # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
-  #   clim_lam    <- arrange(clim_lam, year, population)  %>%
-  #                     subset( lambda != 0 ) 
-  #   # erase any row containing NAs (for Dalgleish et al. 2010 data)
-  #   r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
-  #   if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
-  #   lam_out     <- dplyr::select(clim_lam, year:log_lambda)
-  #   clim_out    <- dplyr::select(clim_lam, -c(year:log_lambda) )
-  #   out         <- list(lambdas = lam_out, climate = clim_out)
-  # }else{
+  # variables
+  var_select  <- c("year", "month", "population", response)
   
   # order, and erase cases in which lambda == 0 (e.g. Eryngium_alpinum, BOU, year 2009)
   clim_lam    <- arrange(clim_lam, year, population)
   # erase any row containing NAs (for Dalgleish et al. 2010 data)
   r_id        <- lapply(clim_lam, function(x) which(is.na(x)) ) %>% unlist
   if( length(r_id) > 0 ) clim_lam  <- clim_lam[-r_id,]
-  eval(parse(n=1, text=paste0("resp_out <- dplyr::select(clim_lam, year:",response,")")))
-  eval(parse(n=1, text=paste0("clim_out <- dplyr::select(clim_lam, -c(year:",response,"))")))
+  
+  resp_out    <- dplyr::select(clim_lam, var_select)
+  clim_out    <- dplyr::select(clim_lam, -which( names(clim_lam) %in% var_select ) )
   out         <- list(resp = resp_out, climate = clim_out)
-  # }
   
   return(out)
   
