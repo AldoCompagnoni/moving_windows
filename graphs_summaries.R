@@ -8,7 +8,7 @@ options(stringsAsFactors = F )
 
 response      <- "surv"
 m_back        <- 24
-interval      <- "5"
+interval      <- NULL
 
 # pipe-able Reduce_rbind function 
 rbind_l     <- function(df_list){  Reduce(function(...) rbind(...), df_list) }
@@ -102,9 +102,6 @@ summ_by_clim <- function(ii){
   }
   pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "elpd") )
   
-  # concervence information
-  conver_info <- function()
-  
   # replication in years
   rep_yr <- function(spp_name){
     
@@ -154,20 +151,20 @@ summ_by_clim <- function(ii){
 #                                      color    = c("blue", "red", "brown") ) ) %>%
 #                   mutate(method = "mov_win")
 input_df    <- expand.grid( clim_var = c("precip","airt"),
-                            response = c("log_lambda","surv","grow","fec"),
-                            interval = "5" )
+                            response = c("surv","grow","fec"),
+                            interval = "" )
 
 # ALL model information
 mw_summ_df  <- lapply(1:nrow(input_df), summ_by_clim) %>%
                   rbind_l %>%
                   mutate(method = "mov_win")
 
-# convergence issues
-mw_summ_df %>% 
-  subset(model=="gaus") %>% 
-  subset( rhat_high > 0) %>% 
-  group_by(clim_variable, response_var) %>%
-  summarise( convergence_issues = n())
+# # convergence issues
+# mw_summ_df %>% 
+#   subset(model=="gaus") %>% 
+#   subset( rhat_high > 0) %>% 
+#   group_by(clim_variable, response_var) %>%
+#   summarise( convergence_issues = n())
                   
                   
 # add splines to the mix
@@ -200,31 +197,147 @@ rep_clim_info   <- dplyr::select(mw_summ_df, species, clim_var, rep_n, rep_yr,
 spline_summ_df  <- left_join( spline_summ_tmp, rep_clim_info )
 
 
-# summary MOVING WINDOWS plots ----------------------------------------------------------------------------------
+# summary tables ------------------------------------------------------------------------------------------------
+
+# best models: AGGREGATE results
+best_mod_agg <- dplyr::select(mw_summ_df, species, response_var, clim_variable, model_elpd) %>%
+                  unique %>%
+                  group_by( model_elpd ) %>%
+                  summarise( best_mod_n = n() ) %>%
+                  mutate( percent = round( best_mod_n/sum(best_mod_n), 2)*100 )
+write.csv(best_mod_agg, "results/moving_windows/best_model_vital_rates.csv", row.names=F)
+
+# set up barplot data frame
+best_mod_all <- dplyr::select(mw_summ_df, species, response_var, clim_variable, model_elpd) %>%
+                  unique %>%
+                  group_by( response_var, clim_variable, model_elpd ) %>%
+                  summarise( best_mod_n = n() ) %>%
+                  mutate( percent = round( best_mod_n/sum(best_mod_n), 2)*100 ) %>%
+                  arrange(model_elpd, response_var, clim_variable)
+# all cases
+expand_cases <- expand.grid( model_elpd    = c("ctrl1","ctrl2","expp","gaus", "gev", "simpl"),
+                             response_var  = c("surv","grow","fec"),
+                             clim_variable = c("airt","precip") )
+
+# format model selection results to present in a table
+form_mod_sel <- function( clim_var ){
+  
+  out <- expand_cases %>%
+            subset( clim_variable == clim_var ) %>%
+            left_join( subset(best_mod_all, clim_variable == clim_var) ) %>%
+            mutate( best_mod_n = replace(best_mod_n, is.na(best_mod_n), 0),
+                    percent    = replace(percent, is.na(percent), 0) ) %>%
+            arrange(model_elpd, response_var)
+  return(out)
+  
+}
+
+# prepare model selection table
+best_mod_all <- lapply(c("precip","airt"), form_mod_sel) %>% 
+                  rbind_l %>%
+                  mutate( response_var = as.character(response_var) ) %>%
+                  mutate( response_var = replace(response_var, response_var == "surv", "Survival"),
+                          response_var = replace(response_var, response_var == "grow", "Growth"),
+                          response_var = replace(response_var, response_var == "fec",  "Fecundity") )
+write.csv(best_mod_all, "results/moving_windows/best_mod_all.csv", row.names=F)
+
+
+
+# Best models ALL COMPRISED -----------------------------------------------------------------------------
+
+# best models (MSE)
+tiff(paste0("results/moving_windows/best_mods",interval,"_mse.tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0), mgp = c(2,0.7,0) ,
+    cex.lab = 1.2)
+
+# Select best models based on MSE
+mods_mse    <- mw_summ_df %>%
+                  dplyr::select(species, response_var, clim_variable, model_mse) %>%
+                  unique
+# Set up data frame with best models
+best_mod_l  <- lapply( split(mods_mse$model_mse, as.factor(mods_mse$clim_var) ),
+                       function(x) table(x) )
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% 
+                  t %>% as.data.frame %>%
+                  setNames( c('Air temperature','Precipitation') ) %>%
+                  tibble::add_column(model = rownames(.), .before=1)
+
+# define which colors to plot
+color_df    <-  data.frame( model      = c("ctrl1", "ctrl2", "yr1", "yr2", "expp", "gaus", 'gev', 'simpl',
+                                           "expp_n", 'gev_n', 'simpl_n'),
+                            model_name = c("NULL",  "24 Months", 'year_t', 'yeart-1',"GenNorm", "Gaus", 'GEV', 'Simplex',
+                                           'Gen_Norm_nested', "GEV_nested", "Simlex_nested"), 
+                            col        = c("black", "grey60", 'grey80', "grey30", "green", "red", "brown", "orange",
+                                           "green4", 'brown4', 'orange4') )
+color_plot  <- left_join( color_df, best_mod_df )
+                  
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
+legend("topright", color_plot$model_name, fill = color_plot$col,
+       bty = "n")
+
+dev.off()
+
+
+# best models
+tiff(paste0("results/moving_windows/best_mods_elpd",interval,".tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
+
+# Select best models based on MSE
+mods_elpd    <- mw_summ_df %>%
+                  dplyr::select(species, response_var, clim_variable, model_elpd) %>%
+                  unique
+# set up barplot data frame
+best_mod_l  <- lapply( split(mods_elpd$model_elpd, as.factor(mods_elpd$clim_var) ),
+                       function(x) table(x) )
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>%
+                  t %>% as.data.frame %>%
+                  tibble::add_column(model = rownames(.), .before = 1 ) %>%
+                  setNames( c("model","Air temperature","Precipitation") )
+
+# define which colors to plot (color_df defined above)
+color_plot  <-  full_join( color_df, best_mod_df )
+
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
+legend("topright", color_plot$model_name, fill = color_plot$col,
+       bty = "n", cex= 1)
+
+dev.off()
+
+
+# Best models BY RESPONSE ------------------------------------------------------------------------
+response      <- "grow"
+mw_summ_vr_df <- subset(mw_summ_df, response_var == response) %>%
+                    dplyr::select(species, response_var, clim_variable, model_elpd, model_mse) %>%
+                    unique
 
 # best models
 tiff(paste0("results/moving_windows/",response,"/best_mods",interval,".tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
-par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0) ,
-    cex.lab = 1.2)
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 # set up barplot data frame
-best_mod_l  <- lapply( split(mw_summ_df$model_mse, as.factor(mw_summ_df$clim_var) ),
+best_mod_l  <- lapply( split(mw_summ_vr_df$model_mse, as.factor(mw_summ_vr_df$clim_var) ),
                        function(x) table(x) )
-best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t 
-#best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% t %>% t 
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>% 
+                  t %>% as.data.frame %>%
+                  tibble::add_column(model = rownames(.), .before = 1 ) %>%
+                  setNames( c("model","Air temperature","Precipitation") )
 
 # define which colors to plot
-color_df    <-  data.frame( model      = c("ctrl1", "ctrl2",  "expp", "gaus"),
-                            model_name = c("NULL",  "24 Mon", "Expp", "Gaus"), 
-                            col        = c("black", "grey40", "grey", "white") )
-color_plot  <- left_join( data.frame(model = rownames(best_mod_df) ),
-                          color_df )
+color_plot  <-  full_join( color_df, best_mod_df )
 
-#colnames(best_mod_df) <- c("Air temp.")
-colnames(best_mod_df) <- c("Air temperature","Precipitation")
-barplot(best_mod_df, beside=T, col = color_plot$col, cex.names = 1.3)
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
 legend("topright", color_plot$model_name, fill = color_plot$col,
        bty = "n")
 
@@ -238,30 +351,38 @@ tiff(paste0("results/moving_windows/",response,"/best_mods_ELPD",interval,".tiff
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
 
 # set up barplot data frame
-best_mod_l  <- lapply( split(mw_summ_df$model_elpd, as.factor(mw_summ_df$clim_var) ),
+best_mod_l  <- lapply( split(mw_summ_vr_df$model_elpd, as.factor(mw_summ_vr_df$clim_var) ),
                        function(x) table(x) )
-best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>%
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>%
                   t %>% as.data.frame %>%
                   tibble::add_column(model = rownames(.), .before = 1 ) %>%
                   setNames( c("model","Air temperature","Precipitation") )
-# best_mod_tmp<- Reduce(function(...) bind_rows(...), best_mod_l) %>% t %>% t %>%
-#                   as.data.frame %>%
-#                   rename(model = x, airt = Freq) %>%
-#                   select(-Var2)
 
 # define which colors to plot
-color_df    <-  data.frame( model      = c("ctrl1", "ctrl2",     "expp", "gaus"),
-                            model_name = c("NULL",  "2 yr clim", "Discrete", "Gaus"),
-                            col        = c("black", "grey40",    "grey", "white") )
-best_mod_df <-  full_join( color_df, best_mod_tmp )
+color_plot   <-  full_join( color_df, best_mod_df )
 
 # plot_mat    <- as.matrix(best_mod_df[,c("airt")])
 plot_mat    <- as.matrix(best_mod_df[,c("Air temperature","Precipitation")])
-barplot(plot_mat, beside=T, col = color_df$col, cex.names = 1.3)
-legend("topright", best_mod_df$model_name, fill = best_mod_df$col,
-       bty = "n", cex= 1)
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
+legend("topright", color_plot$model_name, fill = color_plot$col,
+       bty = "n")
 
 dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
