@@ -52,11 +52,14 @@ clim_list <- function(spp_name, clim, lam_spp){ # clim_var,
 # detrend population-level climate; put it in "long" form
 clim_detrend <- function(clim_x, clim_var = "precip", foo){ 
   
+  # precipitation can only be calculated via sums
+  if( clim_var == "precip") foo = sum
+  
   # years
   years_vec <- clim_x$year %>% unique %>% sort
   
   # clim_x value rename
-  clim_x    <- clim_x %>% rename_( .dots = setNames(clim_var, "value") )
+  clim_x    <- clim_x %>% setNames( c("species","year","day","value") )
   
   # prepare indexes
   split_id  <- Filter(function(x) x < 366, which( (0:365 %% 5) == 0 ) ) %>%
@@ -98,7 +101,7 @@ clim_detrend <- function(clim_x, clim_var = "precip", foo){
   clim_int    <- Reduce(function(...) rbind(...), clim_int_l) %>%
                     apply(2, na_for_inf)
   
-  # detrend climate - but NOT if you are using GDD 
+  # detrend climate 
   d_prec      <- apply(clim_int[,-1], 2, FUN = scale, center = T, scale = T) %>%
                     as.data.frame() %>%
                     bind_cols( as.data.frame(clim_int[,"year", drop=F]) ) %>%
