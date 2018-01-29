@@ -14,7 +14,7 @@ rstan_options( auto_write = TRUE )
 options( mc.cores = parallel::detectCores() )
 
 # climate predictor, response, months back, max. number of knots
-response  <- "SurvSSDPreRep"
+response  <- "surv"
 clim_var  <- "airt"
 m_back    <- 24    
 st_dev    <- FALSE
@@ -50,24 +50,26 @@ if( response == "log_lambda")                             family = "normal"
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 14
+ii            <- 6
 spp_name      <- spp[ii]
 
 # lambda data
-spp_response  <- format_species(spp_name, resp_df, response)
+spp_resp      <- format_species(spp_name, resp_df, response)
 
 # climate data
-clim_separate <- clim_list(spp_name, clim, spp_response)
-clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var, st_dev)
-clim_mats     <- Map(clim_long, clim_detrnded, spp_response, m_back)
+clim_separate <- clim_list(spp_name, clim, spp_resp)
+#clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var)
+clim_detrnded <- lapply(clim_separate, clim_detrend, clim_var)
+clim_mats     <- Map(clim_long, clim_detrnded, spp_resp, m_back)
 
 # model data
-mod_data          <- lambda_plus_clim(spp_response, clim_mats, response)
+mod_data          <- lambda_plus_clim(spp_resp, clim_mats, response)
 mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
 
 # throw error if not enough data
 if( nrow(mod_data$resp) < 6 ) stop( paste0("not enough temporal replication for '", 
                                               spp_name, "' and response variable '" , response, "'") )
+
 
 # Transform response variables (if needed) ------------------------------------------------------------------
 
@@ -116,6 +118,7 @@ dat_stan <- list(
   y      = mod_data$resp[,response],
   clim   = mod_data$climate,
   clim_means = rowMeans(mod_data$climate),
+  M      = 12, # number of months in a year
   expp_beta = expp_beta
 )
 
@@ -159,8 +162,8 @@ fit_gaus <- stan(
   warmup = sim_pars$warmup,
   iter = sim_pars$iter,
   thin = sim_pars$thin,
-  chains = sim_pars$chains#,
-  #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
 
 # exponential power moving window
@@ -171,24 +174,124 @@ fit_expp <- stan(
   warmup = sim_pars$warmup,
   iter = sim_pars$iter,
   thin = sim_pars$thin,
-  chains = sim_pars$chains#,
-  #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
+
+# Generalized extreme value 
+fit_gev <- stan(
+  file = paste0("stan/",family,"_gev.stan"),
+  data = dat_stan,
+  pars = c('loc', 'scale', "shape", 'alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
+# Simplex - 24 months
+dat_stan$clim <- t(mod_data$climate)
+fit_24 <- stan(
+  file = paste0("stan/",family,"_dirichlet.stan"),
+  data = dat_stan,
+  pars = c('theta', 'alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+dat_stan$clim <- mod_data$climate
+
+
+# Nested models 
+
+# update data list
+dat_stan$clim         <- t(mod_data$climate)
+dat_stan$clim1        <- t(mod_data$climate)[1:12 ,]
+dat_stan$clim2        <- t(mod_data$climate)[13:24,]
+dat_stan$clim1_means  <- rowMeans(mod_data$climate[,1:12 ])
+dat_stan$clim2_means  <- rowMeans(mod_data$climate[,13:24])
+dat_stan$K            <- nrow(dat_stan$clim) / 12
+
+# Simplex nested
+fit_24_nest <- stan(
+  file = paste0("stan/",family,"_dirichlet_nest.stan"),
+  data = dat_stan,
+  pars = c('theta_y', 'theta_m', 'alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
+# Generalized Extreme Value nested
+fit_gev_nest <- stan(
+  file = paste0("stan/",family,"_gev_nest.stan"),
+  data = dat_stan,
+  pars = c('loc', 'scale', "shape", 'theta_y', 'alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
+# Power exponential nested 
+fit_expp_nest <- stan(
+  file = paste0("stan/",family,"_expp_nest.stan"),
+  data = dat_stan,
+  pars = c('sens_mu', 'sens_sd', 'theta_y', 'alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
+# Power exponential nested 
+fit_yr1 <- stan(
+  file = paste0("stan/",family,"_yr1.stan"),
+  data = dat_stan,
+  pars = c('alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
+# Power exponential nested 
+fit_yr2 <- stan(
+  file = paste0("stan/",family,"_yr2.stan"),
+  data = dat_stan,
+  pars = c('alpha', 'beta', 'y_sd', 'log_lik'),
+  warmup = sim_pars$warmup,
+  iter = sim_pars$iter,
+  thin = sim_pars$thin,
+  chains = sim_pars$chains,
+  control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
+)
+
 
 # parameter values and diagnostics ----------------------------------------------------------------
 
 # list of model fits
-mod_fit   <- list(ctrl1 = fit_ctrl1, ctrl2 = fit_ctrl2,
-                  gaus  = fit_gaus,  expp  = fit_expp )
-
-# parameter values
-pars      <- c('sens_mu', 'sens_sd', 'alpha', 'beta', "y_sd")
+mod_fit   <- list(ctrl1   = fit_ctrl1,   ctrl2 = fit_ctrl2,
+                  yr1     = fit_yr1,     yr2   = fit_yr2,
+                  gaus    = fit_gaus,    expp  = fit_expp,
+                  gev     = fit_gev,     simpl = fit_24,
+                  simpl_n = fit_24_nest, gev_n = fit_gev_nest,
+                  expp_n  = fit_expp_nest)
 
 # get central tendencies
 pars_diag_extract <- function(x){
   
   # central tendencies
-  tmp         <- rstan::extract(x)
+  tmp         <- rstan::extract(x) %>% as.data.frame
+  tmp         <- setNames(tmp, gsub("\\.","_",names(tmp)))
   par_means   <- sapply(tmp, function(x) mean(x)) %>%
                     setNames( paste0(names(tmp),"_mean") )
   par_medians <- sapply(tmp, function(x) median(x)) %>%
@@ -215,13 +318,10 @@ pars_diag_extract <- function(x){
 posterior_extract <- function(model_fit, model_name){
   
   # central tendencies
-  tmp         <- rstan::extract(model_fit)
-  post_df     <- do.call(cbind, tmp) %>% as.data.frame
-  ll_id       <- grep("V", colnames(post_df) )
-  new_names   <- paste0("log_lik_", 1:length(ll_id) )
-  names(post_df)[ll_id] <- new_names # no way to do this in dplyr
-  post_df     <- tibble::add_column(post_df,
-                                    model = model_name, .before=1)
+  tmp     <- rstan::extract(model_fit) %>% as.data.frame
+  post_df <- setNames(tmp, gsub("\\.","_",names(tmp)))
+  post_df <- tibble::add_column(post_df,
+                                model = model_name, .before=1)
   
   rm(tmp) ; return(post_df)
   
@@ -240,22 +340,29 @@ posteriors    <- Reduce(function(...) bind_rows(...), posts_l)
 # WAIC model comparison --------------------------------------------------------------------
 
 # wAIC model selection using loo approximation (from library 'loo')
-log_liks  <- lapply(mod_fit, extract_log_lik)
+log_liks   <- lapply(mod_fit, extract_log_lik)
 
 # leave-one-out estimates
 loo_l      <- lapply(log_liks, loo) %>%
-                setNames( c("loo_ctrl1",  "loo_ctrl2", "loo_gaus", "loo_expp") )
-loo_df     <- loo::compare(loo_l$loo_ctrl1, loo_l$loo_ctrl2, loo_l$loo_gaus, loo_l$loo_expp) %>%
+                setNames( c("loo_ctrl1",   "loo_ctrl2", "loo_yr1", "loo_yr2", 
+                            "loo_gaus",    "loo_expp",  "loo_gev", "loo_simpl",
+                            "loo_simpl_n", "loo_gev_n", "loo_expp_n") )
+loo_df     <- loo::compare(loo_l$loo_ctrl1,   loo_l$loo_ctrl2, loo_l$loo_yr1,   loo_l$loo_yr2, 
+                           loo_l$loo_gaus,    loo_l$loo_expp,  loo_l$loo_gev,   loo_l$loo_simpl,
+                           loo_l$loo_simpl_n, loo_l$loo_gev_n, loo_l$loo_expp_n ) %>%
                 as.data.frame %>%
                 tibble::add_column(model = gsub("loo_","",names(loo_l) ), .before = 1)
 
 # WAIC estimates
 waic_l    <- lapply(log_liks, waic) %>%
-                setNames(c("waic_ctrl1",  "waic_ctrl2", "waic_gaus", "waic_expp"))
-waic_df   <- loo::compare(waic_l$waic_gaus, waic_l$waic_expp, waic_l$waic_ctrl1, waic_l$waic_ctrl2) %>%
+                setNames(c("waic_ctrl1",   "waic_ctrl2", "waic_yr1",   "waic_yr2", 
+                           "waic_gaus",    "waic_expp",  "waic_gev",   "waic_simpl", 
+                           "waic_simpl_n", "waic_gev_n", "waic_expp_n") )
+waic_df   <- loo::compare(waic_l$waic_ctrl1,   waic_l$waic_ctrl2, waic_l$waic_yr1, waic_l$waic_yr2,  
+                          waic_l$waic_gaus,    waic_l$waic_expp,  waic_l$waic_gev, waic_l$waic_simpl,
+                          waic_l$waic_simpl_n, waic_l$waic_gev_n, waic_l$waic_expp_n) %>%
                 as.data.frame %>%
                 tibble::add_column(model = gsub("waic_","",names(waic_l) ), .before = 1)
-
 
 
 # leave-one-out crossvalidation ------------------------------------------------------------------------
@@ -294,7 +401,8 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
     clim_test = array(clim_test),
     clim_means_train = array(clim_means_train), # climate averages over full 24-month window (for control model #2)
     clim_means_test = array(clim_means_test),   # climate averages over full 24-month window (for control model #2)
-    expp_beta = expp_beta       # beta paramater for exponential power distribution
+    expp_beta = expp_beta, # beta paramater for exponential power distribution
+    M         = 12  # number of months in a year
   )
   
   # fit control 1 (intercept only)
@@ -318,7 +426,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
     thin = sim_pars$thin,
     chains = sim_pars$chains
   )
-  
+
   # fit moving window, gaussian
   fit_gaus_crossval <- stan( 
     file = paste0("stan/",family,"_gaus_crossval.stan"), 
@@ -332,7 +440,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   )
   
   # fit moving window, exponential power
-  fit_expp_crossval <- stan( 
+  fit_expp_crossval <- stan(
     file = paste0("stan/",family,"_expp_crossval.stan"),
     data = dat_stan_crossval,
     pars = c('sens_mu', 'sens_sd', 'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
@@ -343,12 +451,114 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
     #control = list(adapt_delta = 0.999, stepsize = 0.1, max_treedepth = 12)
   )
   
-  # posterior mean prediction for the out-of-sample value
-  crossval_mods <- list( ctrl1 = fit_ctrl1_crossval, 
-                         ctrl2 = fit_ctrl2_crossval, 
-                         gaus  = fit_gaus_crossval, 
-                         expp  = fit_expp_crossval )
+  # fit GEV (generalized extreme value distribution)
+  fit_gev_crossval <- stan(
+    file = paste0("stan/",family,"_gev_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('loc','scale','shape','alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
   
+  # update data list
+  dat_stan_crossval$clim_train        <- t(dat_stan_crossval$clim_train)
+  dat_stan_crossval$clim_test         <- t(dat_stan_crossval$clim_test)
+  
+  dat_stan_crossval$clim1_train       <- dat_stan_crossval$clim_train[1:12,] 
+  dat_stan_crossval$clim1_test        <- dat_stan_crossval$clim_test[1:12, ,drop=F] 
+  
+  dat_stan_crossval$clim2_train       <- dat_stan_crossval$clim_train[13:24,] 
+  dat_stan_crossval$clim2_test        <- dat_stan_crossval$clim_test[13:24, ,drop=F] 
+  
+  dat_stan_crossval$clim1_means_train <- colMeans(dat_stan_crossval$clim_train[1:12,])
+  dat_stan_crossval$clim1_means_test  <- colMeans(dat_stan_crossval$clim_test[1:12, ,drop=F]) %>% array
+  
+  dat_stan_crossval$clim2_means_train <- colMeans(dat_stan_crossval$clim_train[13:24,])
+  dat_stan_crossval$clim2_means_test  <- colMeans(dat_stan_crossval$clim_test[13:24, ,drop=F]) %>% array
+  
+  dat_stan_crossval$K                 <- nrow(dat_stan_crossval$clim_train) / 12
+  
+  # fit 24 month simplex
+  fit_24_crossval <- stan(
+    file = paste0("stan/",family,"_dirichlet_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('theta','alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # fit simplex nested within year
+  fit_24_nest_crossval <- stan(
+    file = paste0("stan/",family,"_dirichlet_nest_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('theta_m', "theta_y",'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # fit gev nested within year
+  fit_gev_nest_crossval <- stan(
+    file = paste0("stan/",family,"_gev_nest_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('loc','scale','shape', "theta_y",'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # fit exponential power nested within year
+  fit_expp_nest_crossval <- stan(
+    file = paste0("stan/",family,"_expp_nest_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('sens_mu','sens_sd', "theta_y",'alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # fit year 1 mean
+  fit_yr1_crossval <- stan(
+    file = paste0("stan/",family,"_yr1_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # fit year 2 mean
+  fit_yr2_crossval <- stan(
+    file = paste0("stan/",family,"_yr2_crossval.stan"),
+    data = dat_stan_crossval,
+    pars = c('alpha', 'beta', 'y_sd', 'pred_y', 'log_lik','log_lik_test'),
+    warmup = sim_pars$warmup,
+    iter = sim_pars$iter,
+    thin = sim_pars$thin,
+    chains = sim_pars$chains
+  )
+  
+  # posterior mean prediction for the out-of-sample value
+  crossval_mods <- list( ctrl1   = fit_ctrl1_crossval, 
+                         ctrl2   = fit_ctrl2_crossval, 
+                         yr1     = fit_yr1_crossval, 
+                         yr2     = fit_yr2_crossval, 
+                         gaus    = fit_gaus_crossval, 
+                         expp    = fit_expp_crossval,
+                         gev     = fit_gev_crossval,
+                         simpl   = fit_24_crossval,
+                         simpl_n = fit_24_nest_crossval,
+                         gev_n   = fit_gev_nest_crossval,
+                         expp_n  = fit_expp_nest_crossval )
+                         
   # predictions
   mod_preds <- lapply(crossval_mods, function(x) rstan::extract(x, 'pred_y')$pred_y %>% apply(2,mean) )
   
@@ -374,33 +584,51 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   }
   
   # store diagnostics
-  gaus_expp   <- crossval_mods[c("gaus","expp")]
-  diagnost_l  <- Map(diagnostics, gaus_expp, names(gaus_expp))
+  # gaus_expp   <- crossval_mods[c("gaus","expp","gev","simpl")]
+  diagnost_l  <- Map(diagnostics, crossval_mods, names(crossval_mods))
   diagnost_df <- do.call(cbind, diagnost_l) %>%
                     bind_cols( unique( dplyr::select(mod_data$resp[test_i,],year) ) )
   
   # function
   pred_elpd_df<- mod_data$resp[test_i,] %>%
                     mutate( # predictions
+                            simpl_pred = mod_preds$simpl,      
+                            gev_pred   = mod_preds$gev,
                             gaus_pred  = mod_preds$gaus,
                             expp_pred  = mod_preds$expp,
                             ctrl1_pred = mod_preds$ctrl1,
                             ctrl2_pred = mod_preds$ctrl2,
+                            yr1_pred   = mod_preds$yr1,
+                            yr2_pred   = mod_preds$yr2,
+                            simpl_n_pred = mod_preds$simpl_n,      
+                            gev_n_pred   = mod_preds$gev_n,
+                            expp_n_pred  = mod_preds$expp_n,
+                            
                             # Expected Log Predictive Density
+                            simpl_elpd = mod_elpds$simpl,
+                            gev_elpd   = mod_elpds$gev,
                             gaus_elpd  = mod_elpds$gaus,
                             expp_elpd  = mod_elpds$expp,
                             ctrl1_elpd = mod_elpds$ctrl1,
-                            ctrl2_elpd = mod_elpds$ctrl2 )
+                            ctrl2_elpd = mod_elpds$ctrl2,
+                            yr1_elpd   = mod_elpds$yr1,
+                            yr2_elpd   = mod_elpds$yr2,
+                            simpl_n_elpd = mod_elpds$simpl_n,      
+                            gev_n_elpd   = mod_elpds$gev_n,
+                            expp_n_elpd  = mod_elpds$expp_n )
                   
   # df to return
   out         <- left_join(pred_elpd_df, diagnost_df)
   
   # remove stanfit objects (garbage collection)
-  rm(fit_gaus_crossval)
-  rm(fit_expp_crossval)
-  rm(fit_ctrl1_crossval)
-  rm(fit_ctrl2_crossval)
-  
+  rm(fit_gev_crossval)   ; rm(fit_24_crossval)
+  rm(fit_gaus_crossval)  ; rm(fit_expp_crossval)
+  rm(fit_ctrl1_crossval) ; rm(fit_ctrl2_crossval)
+  rm(fit_yr1_crossval)   ; rm(fit_yr2_crossval)
+  rm(fit_gev_nest_crossval) 
+  rm(fit_simpl_nest_crossval)
+  rm(fit_expp_nest_crossval)
+
   return(out)
   
 }
@@ -444,7 +672,7 @@ perform_format <- function(x, var){
 
 # mean squared error
 mse <- cxval_pred %>% 
-          dplyr::select(gaus_pred:ctrl2_pred) %>%
+          dplyr::select(simpl_pred:expp_n_pred) %>%
           lapply(pred_perform, mod_data, response, "mse") %>%
           perform_format("mse") %>%
           mutate( model = gsub("_pred","",model) )
@@ -458,7 +686,7 @@ mse <- cxval_pred %>%
 
 # Expected Log Predictive Density
 elpd <- cxval_pred %>% 
-          dplyr::select(gaus_elpd:ctrl2_elpd) %>%
+          dplyr::select(simpl_elpd:expp_n_elpd) %>%
           apply(2, sum) %>% 
           as.matrix %>% 
           as.data.frame %>%
