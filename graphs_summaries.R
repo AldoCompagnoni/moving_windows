@@ -6,12 +6,11 @@ library(magrittr)
 library(testthat)
 options(stringsAsFactors = F )
 
-response      <- "surv"
-m_back        <- 24
+m_back        <- 36
 interval      <- NULL
 
 # pipe-able Reduce_rbind function 
-rbind_l     <- function(df_list){  Reduce(function(...) rbind(...), df_list) }
+rbind_l     <- function(df_list){ Reduce(function(...) rbind(...), df_list) }
 
 # summarize moving windows results by climate variable
 summ_by_clim <- function(ii){
@@ -265,17 +264,21 @@ best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>%
                   tibble::add_column(model = rownames(.), .before=1)
 
 # define which colors to plot
-color_df    <-  data.frame( model      = c("ctrl1", "ctrl2", "yr1", "yr2", "expp", "gaus", 'gev', 'simpl',
+color_df    <-  data.frame( model      = c("ctrl1", "ctrl2", "yr1", "yr2", "yr3", "yr_bet", "yr_wgt", 
+                                           "expp", "gaus", 'gev', 'simpl',
                                            "expp_n", 'gev_n', 'simpl_n'),
-                            model_name = c("NULL",  "24 Months", 'year_t', 'yeart-1',"GenNorm", "Gaus", 'GEV', 'Simplex',
+                            model_name = c("NULL",  "24 Months", 'year_t', 'yeart-1',  'yeart-2', 'year_beta', "year_weights",
+                                           "GenNorm", "Gaus", 'GEV', 'Simplex',
                                            'Gen_Norm_nested', "GEV_nested", "Simlex_nested"), 
-                            col        = c("black", "grey60", 'grey80', "grey30", "green", "red", "brown", "orange",
+                            col        = c("black", "grey60", 'grey80', "grey30",  "grey10", 'yellow3', 'violetred3',
+                                           "green", "red", "brown", "orange",
                                            "green4", 'brown4', 'orange4') )
 color_plot  <- left_join( color_df, best_mod_df )
                   
 barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
         beside=T, col = color_plot$col, cex.names = 1.3,
         ylab = "Number models selected as 'best'")
+abline(v=15.5, lty=2)
 legend("topright", color_plot$model_name, fill = color_plot$col,
        bty = "n")
 
@@ -313,7 +316,7 @@ dev.off()
 
 
 # Best models BY RESPONSE ------------------------------------------------------------------------
-response      <- "grow"
+response      <- "fec"
 mw_summ_vr_df <- subset(mw_summ_df, response_var == response) %>%
                     dplyr::select(species, response_var, clim_variable, model_elpd, model_mse) %>%
                     unique
