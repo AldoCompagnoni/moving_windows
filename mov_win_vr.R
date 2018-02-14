@@ -18,7 +18,7 @@ rbind_l <- function(x) Reduce(function(...) rbind(...), x)
 
 # climate predictor, response, months back, max. number of knots
 response  <- "fec"
-clim_var  <- "airt"
+clim_var  <- "precip"
 m_back    <- 36    
 st_dev    <- FALSE
 
@@ -53,7 +53,7 @@ if( response == "log_lambda")                             family = "normal"
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 6
+ii            <- 1
 spp_name      <- spp[ii]
 
 # lambda data
@@ -126,6 +126,8 @@ dat_stan <- list(
                   rowMeans(mod_data$climate[,25:36]) ) %>% rbind_l,
   M       = 12,    # number of months in a year
   K       = ncol(mod_data$climate) / 12,
+  S       = mod_data$resp$population %>% unique %>% length,
+  site_i  = mod_data$resp$population %>% as.factor %>% as.numeric,
   expp_beta = expp_beta
 )
 
@@ -134,7 +136,7 @@ sim_pars <- list(
   warmup = 1000, 
   iter = 4000, 
   thin = 2, 
-  chains = 4
+  chains = 3
 )
 
 # NULL model (model of the mean)
@@ -274,6 +276,7 @@ fit_24 <- stan(
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
 dat_stan$clim <- mod_data$climate
+ 
 
 # Nested models 
 # update data list
@@ -317,6 +320,7 @@ fit_expp_nest <- stan(
   chains = sim_pars$chains#,
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
+
 
 
 # parameter values and diagnostics ----------------------------------------------------------------
@@ -390,12 +394,12 @@ log_liks   <- lapply(mod_fit, extract_log_lik)
 loo_l      <- lapply(log_liks, loo) %>%
                 setNames( c("loo_ctrl1",   "loo_ctrl2", 
                             "loo_yr1",     "loo_yr2",   "loo_yr3", 
-                            "loo_wgt",     "loo_bet",
+                            "loo_yr_wgt",  "loo_yr_bet",
                             "loo_gaus",    "loo_expp",  "loo_gev", "loo_simpl",
                             "loo_simpl_n", "loo_gev_n", "loo_expp_n") )
 loo_df     <- loo::compare(loo_l$loo_ctrl1,   loo_l$loo_ctrl2, 
                            loo_l$loo_yr1,     loo_l$loo_yr2,   loo_l$loo_yr3, 
-                           loo_l$loo_wgt,     loo_l$loo_bet,   
+                           loo_l$loo_yr_wgt,  loo_l$loo_yr_bet,   
                            loo_l$loo_gaus,    loo_l$loo_expp,  loo_l$loo_gev,   loo_l$loo_simpl,
                            loo_l$loo_simpl_n, loo_l$loo_gev_n, loo_l$loo_expp_n ) %>%
                 as.data.frame %>%
@@ -405,14 +409,14 @@ loo_df     <- loo::compare(loo_l$loo_ctrl1,   loo_l$loo_ctrl2,
 waic_l    <- lapply(log_liks, waic) %>%
                 setNames(c("waic_ctrl1",   "waic_ctrl2", 
                            "waic_yr1",     "waic_yr2",   "waic_yr3",  
-                           "waic_wgt",     "waic_beta",   
+                           "waic_yr_wgt",  "waic_yr_bet",   
                            "waic_gaus",    "waic_expp",  "waic_gev",   "waic_simpl", 
                            "waic_simpl_n", "waic_gev_n", "waic_expp_n") )
 waic_df   <- loo::compare(waic_l$waic_ctrl1,   waic_l$waic_ctrl2, 
-                          waic_l$waic_yr1,     waic_l$waic_yr2,   waic_l$waic_yr3,
-                          waic_l$waic_wgt,     waic_l$waic_bet,  
-                          waic_l$waic_gaus,    waic_l$waic_expp,  waic_l$waic_gev, waic_l$waic_simpl,
-                          waic_l$waic_simpl_n, waic_l$waic_gev_n, waic_l$waic_expp_n) %>%
+                          waic_l$waic_yr1,     waic_l$waic_yr2,     waic_l$waic_yr3,
+                          waic_l$waic_yr_wgt,  waic_l$waic_yr_bet,  
+                          waic_l$waic_gaus,    waic_l$waic_expp,    waic_l$waic_gev, waic_l$waic_simpl,
+                          waic_l$waic_simpl_n, waic_l$waic_gev_n,   waic_l$waic_expp_n) %>%
                 as.data.frame %>%
                 tibble::add_column(model = gsub("waic_","",names(waic_l) ), .before = 1)
 
@@ -653,7 +657,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
                          ctrl2   = fit_ctrl2_crossval, 
                          yr1     = fit_yr1_crossval, 
                          yr2     = fit_yr2_crossval, 
-                         yr3     = fit_yr2_crossval, 
+                         yr3     = fit_yr3_crossval, 
                          yr_wgt  = fit_yr_weight_crossval,
                          yr_bet  = fit_yr_beta_crossval,
                          gaus    = fit_gaus_crossval, 
@@ -668,8 +672,13 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
   mod_preds <- lapply(crossval_mods, function(x) rstan::extract(x, 'pred_y')$pred_y %>% apply(2,mean) )
   
   # Expected Log Predictive Density
-  mod_elpds <- lapply(crossval_mods, function(x) rstan::extract(x, 'log_lik_test')$log_lik_test %>% 
-                                                 apply(2,mean) )
+  mod_elpds <- lapply(crossval_mods, function(x){
+                                        rstan::extract(x, 'log_lik_test')$log_lik_test %>% 
+                                          exp %>%
+                                          apply(2,mean) %>%
+                                          log 
+                                      } )
+  
   
   # diagnostics 
   diagnostics <- function(fit_obj, name_mod){
@@ -705,6 +714,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
                             ctrl2_pred   = mod_preds$ctrl2,
                             yr1_pred     = mod_preds$yr1,
                             yr2_pred     = mod_preds$yr2,
+                            yr3_pred     = mod_preds$yr3,
                             yr_wgt_pred  = mod_preds$yr_wgt,
                             yr_bet_pred  = mod_preds$yr_bet,
                             simpl_n_pred = mod_preds$simpl_n,      
@@ -720,6 +730,7 @@ CrossVal <- function(i, mod_data, response) {       # i is index for row to leav
                             ctrl2_elpd   = mod_elpds$ctrl2,
                             yr1_elpd     = mod_elpds$yr1,
                             yr2_elpd     = mod_elpds$yr2,
+                            yr3_elpd     = mod_elpds$yr3,
                             yr_wgt_elpd  = mod_elpds$yr_wgt,
                             yr_bet_elpd  = mod_elpds$yr_bet,
                             simpl_n_elpd = mod_elpds$simpl_n,      
@@ -779,6 +790,10 @@ perform_format <- function(x, var){
     setNames( c("model", var) )
   
 }
+
+# order of 'mod_data$resp' and 'cxval_pred' need be the same
+expect_true( all.equal(dplyr::select(mod_data$resp, year, population),
+                       dplyr::select(cxval_pred,    year, population)) )
 
 # mean squared error
 mse <- cxval_pred %>% 
