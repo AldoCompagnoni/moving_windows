@@ -56,7 +56,7 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
   day_one   <- as.Date( paste0("1/1/", first(clim_x$year) ), 
                         format="%d/%m/%Y" ) 
 
-  # climate data
+  # merge climate 
   clim_d    <- as.Date(1:nrow(clim_x), day_one-1) %>%
                   as.character %>%
                   as.data.frame(stringsAsFactors=F) %>%
@@ -64,24 +64,58 @@ clim_detrend <- function(clim_x, clim_var = "precip", st_dev = FALSE ){ #, pops
                   bind_cols(clim_x) %>%
                   dplyr::select(-year,-day) %>%
                   setNames( c("year", "month", "day", "species", "value") )
-    
-  # # if climate_var airt, then do means, otherwise, do sums! 
-  if( clim_var == "airt" | clim_var == "soilmoist" ){
-    clim_m  <- clim_d %>%
-      group_by(year, month) %>%
-      summarise( value = mean(value, na.rm=T) )  %>%
-      spread( month, value ) %>%
-      setNames( c("year",month.abb) ) %>%            
-      as.data.frame()
-  } else{
-    clim_m   <- clim_d %>%
-      group_by(year, month) %>%
-      summarise( value = sum(value, na.rm=T) )  %>%
-      spread( month, value ) %>%
-      setNames( c("year",month.abb) ) %>%            
-      as.data.frame()
-  }
+  
+  # if there needs to be 1 value per month!
+  month_rep <- clim_d %>% 
+                  dplyr::select(year,month,value) %>% 
+                  unique %>% 
+                  group_by(year,month) %>% 
+                  summarise(rep=n()) %>% 
+                  .$rep %>% 
+                  unique
 
+  # if CHELSA data
+  if( length(month_rep) == 1 & month_rep[1] == 1 ){ 
+    
+    # take unique monthly values
+    clim_u <- clim_d %>% 
+                dplyr::select(year,month,value) %>% 
+                unique
+    
+    # error check: there should be no doubles 
+    expect_equal(nrow(clim_u), (2014-1979)*12)
+    
+    # format data in wide form
+    clim_m  <- clim_u %>% 
+                  spread( month, value ) %>%
+                  setNames( c("year",month.abb) ) 
+
+    # if FetchClimate OR HAYS data
+  } else{
+    
+    # if month_rep between 2 and 4, check whether it's a mistake
+    if( (month_rep %in% c(2:4)) %>% any ) print('WARNING: potential mistake in CHELSA data')
+    
+    # if dataset is not precipitation take monthly MEAN
+    if( clim_var == "airt" | clim_var == "soilmoist" ){
+      clim_m <- clim_d %>%
+                  group_by(year, month) %>%
+                  summarise( value = mean(value, na.rm=T) )  %>%
+                  spread( month, value ) %>%
+                  setNames( c("year",month.abb) ) %>%            
+                  as.data.frame()
+    } else{
+      #  otherwise get monthly SUMS
+      clim_m <- clim_d %>%
+                  group_by(year, month) %>%
+                  summarise( value = sum(value, na.rm=T) )  %>%
+                  spread( month, value ) %>%
+                  setNames( c("year",month.abb) ) %>%            
+                  as.data.frame()
+    }
+    
+  }
+  
   # if st_dev == T, this overrides the above conditional statements
   if(st_dev == T){
     clim_m   <- clim_d %>%
@@ -130,8 +164,8 @@ clim_long <- function(clim_detr, lambda_data, m_back){
   
   # detrended climate in "long" form
   long_out  <- clim_detr %>%
-                  subset(year < (yr_range[2]+1) & year > (yr_range[1] - 6) ) %>%
-                  gather(month, precip, Jan:Dec) %>%
+                  subset(year < (yr_range[2]+1) & year > (yr_range[1] - 4) ) %>%
+                  gather(month, clim_value, Jan:Dec) %>%
                   setNames(c("year", "month", "clim_value") ) %>% 
                   mutate(month_num = factor(month, levels = month.abb) ) %>% 
                   mutate(month_num = as.numeric(month_num) ) %>% 
@@ -159,7 +193,7 @@ clim_long <- function(clim_detr, lambda_data, m_back){
 }
 
 # combine climate data frames (if any)
-lambda_plus_clim <- function(lambdas_l, clim_mat_l, response = "lambda"){
+lambda_plus_clim <- function(lambdas_l, clim_mat_l, response = "log_lambda"){
   
   # lambda and climate n. of populations correspond?
   if( length(lambdas_l) != length(clim_mat_l) ) stop("response and climate lists have differing lengths")
