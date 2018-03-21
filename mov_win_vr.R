@@ -1,6 +1,6 @@
 #bjtwd<-"C:/Users/admin_bjt162/Dropbox/A.Current/Ongoing_Collab_Research/sApropos project/"
 rm(list=ls())
-setwd("C:/cloud/MEGA/Projects/sApropos/")
+setwd("C:/cloud/Dropbox/sApropos/")
 source("C:/CODE/moving_windows/format_data.R")
 library(tidyverse)
 library(dismo)
@@ -18,14 +18,15 @@ rbind_l <- function(x) Reduce(function(...) rbind(...), x)
 
 # climate predictor, response, months back, max. number of knots
 response  <- "fec"
-clim_var  <- "precip"
+clim_var  <- "airt"
 m_back    <- 36    
 st_dev    <- FALSE
 
 # read data -----------------------------------------------------------------------------------------
 lam       <- read.csv("all_demog_6tr.csv", stringsAsFactors = F)
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
+clim      <- data.table::fread(paste0(clim_var,"_chelsa_demo.csv"),  stringsAsFactors = F)
+# clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
 
 # add month info to lambda information
 month_add <- m_info %>%
@@ -53,7 +54,7 @@ if( response == "log_lambda")                             family = "normal"
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 1
+ii            <- 6
 spp_name      <- spp[ii]
 
 # lambda data
@@ -68,6 +69,7 @@ clim_mats     <- Map(clim_long, clim_detrnded, spp_resp, m_back)
 # model data
 mod_data          <- lambda_plus_clim(spp_resp, clim_mats, response)
 mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
+
 
 # throw error if not enough data
 if( nrow(mod_data$resp) < 6 ) stop( paste0("not enough temporal replication for '", 
@@ -162,6 +164,7 @@ fit_ctrl2 <- stan(
   chains = sim_pars$chains
   #control = list(adapt_delta = 0.999, stepsize = 0.001, max_treedepth = 20)
 )
+
 
 # year t
 dat_stan$clim_means  <- rowMeans(mod_data$climate[,1:12 ])
