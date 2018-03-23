@@ -28,19 +28,7 @@ m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
 clim      <- data.table::fread(paste0(clim_var,"_chelsa_hays.csv"),  stringsAsFactors = F)
 # clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
 
-# add month info to lambda information
-month_add <- m_info %>%
-              mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
-              dplyr::select(SpeciesAuthor, MatrixEndMonth)
-resp_add  <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%
-              dplyr::select(-MatrixEndMonth) %>%
-              inner_join(month_add)
-resp_min  <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
-resp_df   <- bind_rows(resp_min, resp_add) %>%
-              subset( !is.na(MatrixEndMonth) ) #%>%
-              #arrange( SpeciesAuthor )
-spp       <- resp_df$SpeciesAuthor %>% unique
-
+spp       <- lam$SpeciesAuthor %>% unique
 
 # format data --------------------------------------------------------------------------------------
 
@@ -54,11 +42,11 @@ if( response == "log_lambda")                             family = "normal"
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 2
+ii            <- 13
 spp_name      <- spp[ii]
 
 # lambda data
-spp_resp      <- format_species(spp_name, resp_df, response)
+spp_resp      <- format_species(spp_name, lam, response)
 
 # climate data
 clim_separate <- clim_list(spp_name, clim, spp_resp)
@@ -69,7 +57,6 @@ clim_mats     <- Map(clim_long, clim_detrnded, spp_resp, m_back)
 # model data
 mod_data          <- lambda_plus_clim(spp_resp, clim_mats, response)
 mod_data$climate  <- mod_data$climate #/ diff(range(mod_data$climate))
-
 
 # throw error if not enough data
 if( nrow(mod_data$resp) < 6 ) stop( paste0("not enough temporal replication for '", 
