@@ -25,7 +25,7 @@ st_dev    <- FALSE
 # read data -----------------------------------------------------------------------------------------
 lam       <- read.csv("all_demog_6tr.csv", stringsAsFactors = F)
 m_info    <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
-clim      <- data.table::fread(paste0(clim_var,"_chelsa_demo.csv"),  stringsAsFactors = F)
+clim      <- data.table::fread(paste0(clim_var,"_chelsa_hays.csv"),  stringsAsFactors = F)
 # clim      <- data.table::fread(paste0(clim_var,"_fc_hays.csv"),  stringsAsFactors = F)
 
 # add month info to lambda information
@@ -54,7 +54,7 @@ if( response == "log_lambda")                             family = "normal"
 expp_beta     <- 20
 
 # set species (I pick Sphaeraclea_coccinea)
-ii            <- 6
+ii            <- 2
 spp_name      <- spp[ii]
 
 # lambda data
@@ -406,7 +406,7 @@ loo_df     <- loo::compare(loo_l$loo_ctrl1,   loo_l$loo_ctrl2,
                            loo_l$loo_gaus,    loo_l$loo_expp,  loo_l$loo_gev,   loo_l$loo_simpl,
                            loo_l$loo_simpl_n, loo_l$loo_gev_n, loo_l$loo_expp_n ) %>%
                 as.data.frame %>%
-                tibble::add_column(model = gsub("loo_","",names(loo_l) ), .before = 1)
+                tibble::add_column(model = gsub("loo_l\\$loo_","",row.names(.) ), .before = 1)
 
 # WAIC estimates
 waic_l    <- lapply(log_liks, waic) %>%
@@ -421,7 +421,7 @@ waic_df   <- loo::compare(waic_l$waic_ctrl1,   waic_l$waic_ctrl2,
                           waic_l$waic_gaus,    waic_l$waic_expp,    waic_l$waic_gev, waic_l$waic_simpl,
                           waic_l$waic_simpl_n, waic_l$waic_gev_n,   waic_l$waic_expp_n) %>%
                 as.data.frame %>%
-                tibble::add_column(model = gsub("waic_","",names(waic_l) ), .before = 1)
+                tibble::add_column(model = gsub("waic_l\\$waic_","",row.names(.) ), .before = 1)
 
 
 # leave-one-out crossvalidation ------------------------------------------------------------------------
