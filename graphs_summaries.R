@@ -1,16 +1,19 @@
 # produce summary graphs
-setwd("C:/cloud/MEGA/projects/sAPROPOS/")
+setwd("C:/cloud/Dropbox/sAPROPOS/")
 source("C:/CODE/moving_windows/format_data_5.R")
 library(tidyverse)
 library(magrittr)
 library(testthat)
 options(stringsAsFactors = F )
 
+today_date    <- gsub("-","_",Sys.time() %>% as.Date %>% as.character)
 m_back        <- 36
 interval      <- NULL
+pre_chelsa    <- NULL # '_pre_chelsa'
 
-# pipe-able Reduce_rbind function 
+# pipe-able Reduce_rbind and grep functions
 rbind_l     <- function(df_list){ Reduce(function(...) rbind(...), df_list) }
+
 
 # summarize moving windows results by climate variable
 summ_by_clim <- function(ii){
@@ -18,6 +21,7 @@ summ_by_clim <- function(ii){
   clim_var <- input_df$clim_var[ii]
   response <- input_df$response[ii]
   interval <- input_df$interval[ii]
+  resp_clim<- paste0("_",response,"_",clim_var)
   
   # read lambda/clim data ---------------------------------------------------------------------------------
   lam     <- read.csv("all_demog_6tr.csv", stringsAsFactors = F) %>%
@@ -59,18 +63,21 @@ summ_by_clim <- function(ii){
                   unique
   
   # summary info ----------------------------------------------------------------------------
-  res_folder<- paste0("results/moving_windows/",response,"/",clim_var,interval) 
-  sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )]
-  crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )]
+  res_folder<- paste0("results/moving_windows/",response,"/",clim_var,pre_chelsa,interval) 
+  sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )] %>% 
+                  stringr::str_subset(resp_clim)
+  crx_files <- list.files(res_folder)[grep("crossval_", list.files(res_folder) )] %>% 
+                  stringr::str_subset(resp_clim)
   mod_summ  <- lapply(sum_files, function(x) read.csv(paste0(res_folder,"/",x)) ) %>%
                   setNames( gsub("mod_summaries_", "", sum_files ) ) %>%
-                  setNames( gsub(".csv", "", names(.) ) )
+                  setNames( gsub(paste0(resp_clim,".csv"), "", names(.) ) )
   replic    <- lapply(crx_files, function(x) read.csv(paste0(res_folder,"/",x)) %>% nrow ) %>%
                   setNames( gsub("crossval_pred_diag_", "", crx_files ) ) %>%
                   setNames( gsub(".csv", "", names(.) ) ) %>%
                   unlist %>% t %>% t %>% as.data.frame %>% 
                   tibble::rownames_to_column(var = "species") %>%
-                  rename( rep_n = V1)
+                  rename( rep_n = V1) %>% 
+                  mutate( species = gsub(resp_clim,"",species) )
   if( clim_var != "soilmoist"){
     mod_splin <- read.csv( paste0("results/splines/summaries/spline_",clim_var,"24_summaries.csv") ) %>%
                     dplyr::select(species,dev0,dev1) %>%
@@ -83,7 +90,7 @@ summ_by_clim <- function(ii){
   # predictive accuracy by measure of fit
   pred_acc_by_mof <- function(mof){
     
-    if( mof == "mse"){
+    if( grepl("mse|looic|waic",mof) ){
       tmp <- lapply(mod_summ, function(x) arrange_(x, mof)) %>%
                 lapply(function(x) x[1,c(mof,"model")]) 
     }
@@ -99,7 +106,7 @@ summ_by_clim <- function(ii){
       setNames( c("species", mof , paste0("model_", mof), paste0("rep_n_", mof)) )
     
   }
-  pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "elpd") )
+  pred_acc_l  <- Map(pred_acc_by_mof, c("mse", "elpd","waic","looic") )
   
   # replication in years
   rep_yr <- function(spp_name){
@@ -136,22 +143,12 @@ summ_by_clim <- function(ii){
   return(mod_climate)
   
 }
-# # put it all together
-# mw_summ_l   <- lapply(c("precip", "pet", "airt", "airt_gdd"), summ_by_clim )
-# # Also: color code the data frame 
-# mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
-#                   merge( data.frame( clim_var = c("precip", "pet", "airt", "airt_gdd"),
-#                                      color    = c("blue", "orange", "red", "green") ) ) %>%
-#                   mutate(method = "mov_win")
-# put it all together
-# mw_summ_l   <- lapply(c("precip", "airt", "soilmoist"), summ_by_clim, response)
-# mw_summ_df  <- Reduce(function(...) rbind(...), mw_summ_l) %>%
-#                   merge( data.frame( clim_var = c("precip", "airt",  "soilmoist"),
-#                                      color    = c("blue", "red", "brown") ) ) %>%
-#                   mutate(method = "mov_win")
+
+# all models results
 input_df    <- expand.grid( clim_var = c("precip","airt"),
-                            response = c("surv","grow","fec"),
-                            interval = "" )
+                            response = c("surv","grow","fec","log_lambda"),
+                            interval = "",
+                            stringsAsFactors = F)
 
 # ALL model information
 mw_summ_df  <- lapply(1:nrow(input_df), summ_by_clim) %>%
@@ -215,7 +212,7 @@ best_mod_all <- dplyr::select(mw_summ_df, species, response_var, clim_variable, 
                   arrange(model_elpd, response_var, clim_variable)
 # all cases
 expand_cases <- expand.grid( model_elpd    = c("ctrl1","ctrl2","expp","gaus", "gev", "simpl"),
-                             response_var  = c("surv","grow","fec"),
+                             response_var  = c("surv","grow","fec","log_lambda"),
                              clim_variable = c("airt","precip") )
 
 # format model selection results to present in a table
@@ -245,7 +242,7 @@ write.csv(best_mod_all, "results/moving_windows/best_mod_all.csv", row.names=F)
 # Best models ALL COMPRISED -----------------------------------------------------------------------------
 
 # best models (MSE)
-tiff(paste0("results/moving_windows/best_mods",interval,"_mse.tiff"),
+tiff(paste0("results/moving_windows/best_mods",interval,"_mse(",today_date,").tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0), mgp = c(2,0.7,0) ,
@@ -285,8 +282,8 @@ legend("topright", color_plot$model_name, fill = color_plot$col,
 dev.off()
 
 
-# best models
-tiff(paste0("results/moving_windows/best_mods_elpd",interval,".tiff"),
+# best models (ELPD)
+tiff(paste0("results/moving_windows/best_mods_elpd",interval,"(",today_date,").tiff"),
      unit="in", width=6.3, height=6.3, res=600,compression="lzw")
 
 par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
@@ -315,8 +312,68 @@ legend("topright", color_plot$model_name, fill = color_plot$col,
 dev.off()
 
 
+# best models (WAIC)
+tiff(paste0("results/moving_windows/best_mods_waic",interval,"(",today_date,").tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
+
+# Select best models based on MSE
+mods_waic   <- mw_summ_df %>%
+                  dplyr::select(species, response_var, clim_variable, model_waic) %>%
+                  unique
+# set up barplot data frame
+best_mod_l  <- lapply( split(mods_waic$model_waic, as.factor(mods_waic$clim_var) ),
+                       function(x) table(x) )
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>%
+                  t %>% as.data.frame %>%
+                  tibble::add_column(model = rownames(.), .before = 1 ) %>%
+                  setNames( c("model","Air temperature","Precipitation") )
+
+# define which colors to plot (color_df defined above)
+color_plot  <-  full_join( color_df, best_mod_df )
+
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
+legend("topright", color_plot$model_name, fill = color_plot$col,
+       bty = "n", cex= 1)
+dev.off()
+
+
+# best models (LOOIC)
+tiff(paste0("results/moving_windows/best_mods_looic",interval,"(",today_date,").tiff"),
+     unit="in", width=6.3, height=6.3, res=600,compression="lzw")
+par(mfrow=c(1,1), mar = c(3.5,3.2,0.5,0.5), mgp = c(2,0.7,0), cex.lab = 1.2)
+
+# Select best models based on MSE
+mods_looic <- mw_summ_df %>%
+                  dplyr::select(species, response_var, clim_variable, model_looic) %>%
+                  unique
+# set up barplot data frame
+best_mod_l  <- lapply( split(mods_looic$model_looic, as.factor(mods_looic$clim_var) ),
+                       function(x) table(x) )
+best_mod_df <- Reduce(function(...) bind_rows(...), best_mod_l) %>%
+                  t %>% as.data.frame %>%
+                  tibble::add_column(model = rownames(.), .before = 1 ) %>%
+                  setNames( c("model","Air temperature","Precipitation") )
+
+# define which colors to plot (color_df defined above)
+color_plot  <-  full_join( color_df, best_mod_df )
+
+barplot(as.matrix(color_plot[,c('Air temperature','Precipitation')]), 
+        beside=T, col = color_plot$col, cex.names = 1.3,
+        ylab = "Number models selected as 'best'")
+legend("topright", color_plot$model_name, fill = color_plot$col,
+       bty = "n", cex= 1)
+dev.off()
+
+
+
+
+
+
 # Best models BY RESPONSE ------------------------------------------------------------------------
-response      <- "fec"
+response      <- "log_lambda"
 mw_summ_vr_df <- subset(mw_summ_df, response_var == response) %>%
                     dplyr::select(species, response_var, clim_variable, model_elpd, model_mse) %>%
                     unique
@@ -779,3 +836,67 @@ compare_df <- merge(obs_clim_rng, mod_splin) %>%
 
 mod <- glm(model_climate_spline ~ model_climate, family= "binomial", data = compare_df)
 summary(mod)
+
+
+
+# check species missing from data (if any) -------------------------------
+# 
+# # what data we have for each species/response combination
+# mod_by_spp_resp <- function(ii){
+#   
+#   clim_var <- input_df$clim_var[ii]
+#   response <- input_df$response[ii]
+#   interval <- input_df$interval[ii]
+#   resp_clim<- paste0("_",response,"_",clim_var)
+#   
+#   # read lambda/clim data ---------------------------------------------------------------------------------
+#   lam     <- read.csv("all_demog_6tr.csv", stringsAsFactors = F) %>%
+#     subset( SpeciesAuthor != "Purshia_subintegra" )
+#   m_info  <- read.csv("MatrixEndMonth_information.csv", stringsAsFactors = F)
+#   
+#   # add monthg info to lambda information
+#   month_add <- m_info %>%
+#     mutate(SpeciesAuthor = trimws(SpeciesAuthor) ) %>%
+#     dplyr::select(SpeciesAuthor, MatrixEndMonth)
+#   lam_add   <- subset(lam, SpeciesAuthor %in% month_add$SpeciesAuthor) %>%  
+#     dplyr::select(-MatrixEndMonth) %>%
+#     inner_join(month_add)
+#   lam_min   <- subset(lam, SpeciesAuthor %in% setdiff(lam$SpeciesAuthor, m_info$SpeciesAuthor) )
+#   lambdas   <- bind_rows(lam_min, lam_add) %>%
+#     subset( !is.na(MatrixEndMonth) ) %>%
+#     subset( SpeciesAuthor != "Eryngium_alpinum" )
+#   
+#   # summary info ----------------------------------------------------------------------------
+#   res_folder<- paste0("results/moving_windows/",response,"/",clim_var,interval) 
+#   sum_files <- list.files(res_folder)[grep("mod_summaries_", list.files(res_folder) )] %>% 
+#     stringr::str_subset(resp_clim)
+#   spp_done  <- gsub(paste0("mod_summaries_|",resp_clim,"|.csv"),"",sum_files)
+#   
+#   spp_by_run<- data.frame( species  = spp_done, 
+#                            response = paste0(response,'_',clim_var) )
+#   
+#   return(spp_by_run)
+#   
+# }
+# 
+# # spp whose runs have completed
+# resp_spp_df <- lapply(1:nrow(input_df), mod_by_spp_resp) %>% rbind_l
+# 
+# # find how many species per response/clim_var combination
+# resp_spp_df %>% count(response)
+# 
+# # extract unique species in each run
+# extract_spp <- function(resp_var){
+#   subset(resp_spp_df, grepl(resp_var, response)) %>% 
+#     .$species %>% 
+#     unique
+# }
+# 
+# # all species
+# all_spp_l   <- lapply(c('fec','grow','surv', 'log_lambda'), extract_spp)
+# 
+# # species missing in 1 to 1 comparisons
+# spp_miss    <- sapply(all_spp_l, # nested s apply
+#                       function(x) sapply(all_spp_l, function(y) setdiff(x,y))) %>%
+#                       unlist %>%
+#                       unique
